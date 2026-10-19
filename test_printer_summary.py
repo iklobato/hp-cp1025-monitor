@@ -15,12 +15,12 @@ import history
 import hpstatus
 import macos_usb
 import web_dashboard
-from dashboard import (
+from dashboard import live_layout, render
+from viewmodel import (
+    build_payload,
     humanize,
     humanize_queue,
-    live_layout,
     port_bits,
-    render,
     revision_summary,
     short_hop,
 )
@@ -550,7 +550,7 @@ def test_chip_ok_trusts_printer_state_over_present_tag():
 
 def test_web_payload_carries_actions_tanks_and_hardware():
     feed = [(datetime(2026, 10, 18, 22, 0, 1), "+1 página(s) impressa(s), total 11")]
-    payload = web_dashboard.build_payload(
+    payload = build_payload(
         hardware_report(),
         20,
         [],
@@ -576,6 +576,29 @@ def test_web_payload_carries_actions_tanks_and_hardware():
     assert payload["changes"] == [
         {"at": "22:00:01", "text": "+1 página(s) impressa(s), total 11"}
     ]
+    assert magenta["pages_text"] == "300" and magenta["impressions_text"] == "447"
+    assert payload["counter_rows"]["Páginas no total"] == "10"
+    assert payload["pace"] == "sem histórico ainda"
+    assert {"label": "fila pausada", "ok": False} in payload["port_badges"]
+
+
+def test_terminal_and_web_show_the_same_status_counter_and_badge_text():
+    report = hardware_report()
+    payload = build_payload(
+        report, 20, [], history.Forecast(None, None, 0, 0), [], 1, 1
+    )
+    console = Console(file=io.StringIO(), width=150, record=True)
+    render(report, 20, console, [], history.Forecast(None, None, 0, 0), full=True)
+    terminal = console.export_text()
+    shared = [
+        *payload["status_rows"].values(),
+        *payload["counter_rows"].values(),
+        *(b["label"] for b in payload["port_badges"]),
+        *payload["usb_bus"].values(),
+        payload["verdict"],
+    ]
+    missing = [text for text in shared if text not in terminal]
+    assert not missing, missing
 
 
 def test_web_server_serves_page_status_and_sse_stream():

@@ -15,23 +15,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import history
-from dashboard import (
-    SEVERITY_LOOK,
-    action_items,
-    controller_rows,
-    endpoint_rows,
-    humanize,
-    humanize_queue,
-    next_to_run_out,
-    port_bits,
-    short_date,
-    translate_category,
-    translate_state,
-    usb_bus_rows,
-)
-from history import level_series
 from hpstatus import UsbError
-from printer_model import OK_STATES, collect, event_hint, years_since
+from printer_model import collect
+from viewmodel import build_payload
 
 PAGE = Path(__file__).with_name("dashboard.html")
 HOST = "127.0.0.1"
@@ -40,96 +26,7 @@ DEFAULT_PORT = 8025
 MIN_INTERVAL_SECONDS = 1.0
 DUTY_FACTOR = 4
 CHANGE_FEED_SIZE = 30
-TREND_POINTS = 30
 SSE_KEEPALIVE_SECONDS = 15
-
-
-def consumable_view(c, report, warn_percent, entries, prediction):
-    empty = prediction.empty_date(c, report.read_at)
-    return {
-        "color": c.color,
-        "name": c.name,
-        "code": c.product_number,
-        "state": c.state,
-        "state_text": translate_state(c.state),
-        "ok": c.state in OK_STATES,
-        "low": c.state in OK_STATES and c.needs_attention(warn_percent),
-        "percent": c.percent,
-        "raw_percent": c.raw_percent,
-        "pages_remaining": c.pages_remaining,
-        "impressions": c.impressions,
-        "rated_yield": c.rated_yield or c.capacity,
-        "brand": c.brand,
-        "serial": c.serial,
-        "manufactured": short_date(c.manufactured, "%m/%Y"),
-        "age_years": years_since(c.manufactured, report.read_at.date()),
-        "installed": short_date(c.installed),
-        "last_used": short_date(c.last_used),
-        "chip": c.chip_tag,
-        "chip_ok": c.chip_ok,
-        "model": c.model_info,
-        "advice": c.advice(warn_percent),
-        "trend": level_series(entries, c.color)[-TREND_POINTS:],
-        "empty_date": f"{empty:%d/%m/%Y}" if empty else None,
-    }
-
-
-def build_payload(report, warn_percent, entries, prediction, changes, reads, read_ms):
-    severity = report.severity(warn_percent)
-    counters = report.counters
-    total = (counters.get("mono") or 0) + (counters.get("color") or 0)
-    return {
-        "read_at": report.read_at.isoformat(timespec="seconds"),
-        "reads": reads,
-        "read_ms": round(read_ms),
-        "warn_percent": warn_percent,
-        "severity": severity,
-        "verdict": SEVERITY_LOOK[severity][0],
-        "status": translate_category(report.status_category),
-        "status_raw": report.status_category,
-        "carousel": report.carousel,
-        "alerts": [
-            {
-                "severity": sev,
-                "id": alert_id,
-                "text": translate_category(alert_id),
-                "colors": colors,
-            }
-            for sev, alert_id, colors in report.alerts
-        ],
-        "actions": [
-            {"subject": subject, "advice": advice, "color": color}
-            for subject, advice, color in action_items(report, warn_percent)
-        ],
-        "next_out": next_to_run_out(report, prediction),
-        "queue": {"paused": report.queue_paused, "text": humanize_queue(report.queue)},
-        "port": {**report.port, "bits": port_bits(report.port.get("raw"))},
-        "consumables": [
-            consumable_view(c, report, warn_percent, entries, prediction)
-            for c in report.consumables
-        ],
-        "counters": {
-            **counters,
-            "color_percent": (
-                round(100 * (counters.get("color") or 0) / total) if total else None
-            ),
-        },
-        "pages_per_day": prediction.pages_per_day,
-        "events": [
-            {"seq": seq, "code": code, "page": page, "hint": event_hint(code)}
-            for seq, code, page in report.events
-        ],
-        "changes": [
-            {"at": f"{at:%H:%M:%S}", "text": text} for at, text in reversed(changes)
-        ],
-        "usb_bus": usb_bus_rows(report),
-        "controller": controller_rows(report),
-        "endpoints": endpoint_rows(report),
-        "identity": {k: humanize(v) for k, v in report.identity.items()},
-        "settings": {k: humanize(v) for k, v in report.settings.items()},
-        "latency_ms": report.latency_ms,
-        "errors": report.errors,
-    }
 
 
 class PrinterFeed:

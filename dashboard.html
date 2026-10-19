@@ -133,7 +133,6 @@ details summary { cursor: pointer; font-weight: 700; color: var(--muted); }
 "use strict";
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "–").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-const num = (v) => v === null || v === undefined ? "–" : Number(v).toLocaleString("pt-BR");
 const toner = (color) => `var(--toner-${color})`;
 const SEVERITY_CLASS = ["b-ok", "b-warn", "b-bad"];
 let lastReadAt = null, lastChangeTop = null;
@@ -183,17 +182,16 @@ function renderTanks(d) {
     const fill = c.percent === null ? '<div class="unknown">?</div>'
       : `<div class="fill" style="height:${c.percent}%;background:${toner(c.color)}"></div>`;
     const label = !c.ok ? `<div class="state-bad">✖ ${esc(c.state_text)}</div>`
-      : `<div class="pct ${c.low ? "state-warn" : ""}">${c.low ? "▲ " : ""}${c.percent}%</div><div class="sub">≈${num(c.pages_remaining)} pág.</div>`;
+      : `<div class="pct ${c.low ? "state-warn" : ""}">${c.low ? "▲ " : ""}${c.percent}%</div><div class="sub">≈${esc(c.pages_text)} pág.</div>`;
     return `<div class="tank" role="img" aria-label="${esc(c.name)} ${c.percent ?? "sem leitura"}%">
       <div class="vessel">${fill}</div><div class="name" style="color:${toner(c.color)}">${esc(c.name)}</div>${label}</div>`;
   }).join("");
 }
 
 function renderStatus(d) {
-  const b = (ok, yes, no) => `<span class="badge ${ok ? "b-ok" : "b-bad"}">${ok ? "✔" : "✖"} ${ok ? yes : no}</span>`;
-  $("badges").innerHTML = b(d.port.selected, "USB online", "USB offline") + b(!d.port.error, "sem erro na porta", "erro na porta")
-    + b(!d.port.paper_empty, "papel ok", "sem papel") + b(!d.queue.paused, "fila ativa", "fila pausada");
-  kv($("statusKv"), {"Estado": d.status, "Carrossel": `parado no cartucho ${d.carousel || "–"}`, "Fila do Mac": d.queue.text});
+  $("badges").innerHTML = d.port_badges.map((b) =>
+    `<span class="badge ${b.ok ? "b-ok" : "b-bad"}">${b.ok ? "✔" : "✖"} ${esc(b.label)}</span>`).join("");
+  kv($("statusKv"), d.status_rows);
   $("alerts").innerHTML = d.alerts.length
     ? d.alerts.map((a) => `<div class="alert">${a.severity === "Error" ? "✖" : "▲"} ${esc(a.text)}${a.colors ? ` · ${esc(a.colors)}` : ""} <small>(${esc(a.id)})</small></div>`).join("")
     : '<div class="state-ok">✔ nenhum alerta ativo</div>';
@@ -206,8 +204,8 @@ function renderSupplies(d) {
     <td>${esc(c.code)}</td><td>${stateCell(c)}</td>
     <td>${c.percent === null ? '<span class="muted">sem leitura</span>'
       : `<span class="bar"><span class="track"><i style="width:${c.percent}%;background:${toner(c.color)}"></i></span>${c.percent}%</span>`}</td>
-    <td class="num">${num(c.pages_remaining)}</td><td>${sparkline(c.trend, toner(c.color))}</td>
-    <td>${esc(c.empty_date || "–")}</td></tr>`).join("");
+    <td class="num">${esc(c.pages_text)}</td><td>${sparkline(c.trend, toner(c.color))}</td>
+    <td>${esc(c.empty_date)}</td></tr>`).join("");
   $("supplies").innerHTML = head + `<tbody>${rows}</tbody>`;
 }
 
@@ -221,15 +219,10 @@ function renderChanges(d) {
 }
 
 function renderCounters(d) {
-  const c = d.counters;
-  kv($("counters"), {
-    "Páginas no total": num(c.total), "Preto e branco": num(c.mono), "Coloridas": num(c.color),
-    "Atolamentos": num(c.jams), "Falhas ao puxar papel": num(c.mispicks),
-    "Ritmo": d.pages_per_day ? `${d.pages_per_day.toFixed(1)} pág./dia` : "sem histórico ainda",
-  });
-  const colorPct = c.color_percent ?? 0;
+  kv($("counters"), {...d.counter_rows, "Ritmo": d.pace});
+  const colorPct = d.color_percent ?? 0;
   $("ratio").innerHTML = `<i style="width:${100 - colorPct}%;background:var(--toner-Black)"></i><i style="width:${colorPct}%;background:var(--toner-Magenta)"></i>`;
-  $("ratioText").textContent = c.color_percent === null ? "" : `P&B ${100 - colorPct}% · cor ${colorPct}%`;
+  $("ratioText").textContent = d.color_percent === null ? "" : `P&B ${100 - colorPct}% · cor ${colorPct}%`;
 }
 
 function renderHardware(d) {
@@ -247,10 +240,10 @@ function renderHardware(d) {
 function renderDetails(d) {
   const head = "<thead><tr><th>Item</th><th>Marca</th><th>Serial</th><th>Fabricado</th><th class='num'>Idade</th><th>Chip</th><th>Mod.</th><th class='num'>Impressas</th><th class='num'>Rend.</th><th class='num'>Bruto</th><th>Instalado</th><th>Último uso</th></tr></thead>";
   $("chips").innerHTML = head + "<tbody>" + d.consumables.map((c) => `<tr>
-    <td><span class="swatch" style="background:${toner(c.color)}"></span>${esc(c.name)}</td><td>${esc(c.brand || "–")}</td><td>${esc(c.serial || "–")}</td>
-    <td>${esc(c.manufactured)}</td><td class="num">${c.age_years === null ? "–" : Math.floor(c.age_years) + " anos"}</td>
-    <td class="${c.chip_ok ? "state-ok" : "state-bad"}">${c.chip_ok ? "✔" : "✖"} ${esc(c.chip || "–")}</td><td>${esc(c.model || "–")}</td>
-    <td class="num">${num(c.impressions)}</td><td class="num">${num(c.rated_yield)}</td><td class="num">${c.raw_percent ?? "–"}%</td>
+    <td><span class="swatch" style="background:${toner(c.color)}"></span>${esc(c.name)}</td><td>${esc(c.brand)}</td><td>${esc(c.serial)}</td>
+    <td>${esc(c.manufactured)}</td><td class="num">${esc(c.age_text)}</td>
+    <td class="${c.chip_ok ? "state-ok" : "state-bad"}">${c.chip_ok ? "✔" : "✖"} ${esc(c.chip)}</td><td>${esc(c.model)}</td>
+    <td class="num">${esc(c.impressions_text)}</td><td class="num">${esc(c.rated_yield_text)}</td><td class="num">${esc(c.raw_text)}</td>
     <td>${esc(c.installed)}</td><td>${esc(c.last_used)}</td></tr>`).join("") + "</tbody>";
   $("events").innerHTML = "<thead><tr><th class='num'>#</th><th>Código</th><th class='num'>Na página</th><th>Significado</th></tr></thead><tbody>"
     + d.events.map((e) => `<tr><td class="num">${e.seq}</td><td class="${e.hint.includes("cartucho") ? "state-bad" : ""}">${esc(e.code)}</td>
