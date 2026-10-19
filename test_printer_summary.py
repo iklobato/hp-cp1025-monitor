@@ -1,6 +1,7 @@
 import io
 import json
 import tempfile
+from contextlib import contextmanager
 import threading
 from datetime import date, datetime, timedelta
 from http.server import ThreadingHTTPServer
@@ -289,23 +290,21 @@ def test_revision_summary_names_only_outliers():
     assert revision_summary({}) == ""
 
 
-def test_endpoint_map_parses_all_endpoints_including_interrupt(monkeypatch=None):
-    descriptor = bytes(
-        [9, 2, 39, 0, 2, 1, 0, 0xC0, 49]
-        + [9, 4, 0, 0, 1, 7, 1, 2, 0]
-        + [7, 5, 0x01, 2, 0x00, 0x02, 0]
-        + [9, 4, 1, 0, 2, 255, 4, 1, 0]
-        + [7, 5, 0x82, 2, 0x00, 0x02, 0]
-        + [7, 5, 0x83, 3, 8, 0, 8]
-    )
-    original = hpstatus.control_in
-    hpstatus.control_in = lambda *args: descriptor
-    try:
-        interfaces = hpstatus.endpoint_map(None)
-    finally:
-        hpstatus.control_in = original
+CONFIG_DESCRIPTOR = bytes(
+    [9, 2, 39, 0, 2, 1, 0, 0xC0, 49]
+    + [9, 4, 0, 0, 1, 7, 1, 2, 0]
+    + [7, 5, 0x01, 2, 0x00, 0x02, 0]
+    + [9, 4, 1, 0, 3, 255, 4, 1, 0]
+    + [7, 5, 0x02, 2, 0x00, 0x02, 0]
+    + [7, 5, 0x82, 2, 0x00, 0x02, 0]
+    + [7, 5, 0x83, 3, 8, 0, 8]
+)
+
+
+def test_endpoint_map_parses_all_endpoints_including_interrupt():
+    interfaces = hpstatus.parse_endpoint_map(CONFIG_DESCRIPTOR)
     assert [i["class"] for i in interfaces] == [(7, 1, 2), (255, 4, 1)]
-    interrupt = interfaces[1]["endpoints"][1]
+    interrupt = interfaces[1]["endpoints"][2]
     assert interrupt == {
         "address": 0x83,
         "direction": "IN",
@@ -314,6 +313,58 @@ def test_endpoint_map_parses_all_endpoints_including_interrupt(monkeypatch=None)
         "interval": 8,
     }
     assert interfaces[0]["endpoints"][0]["max_packet"] == 512
+
+
+class FakeUsbPrinter:
+    """In-memory stand-in for UsbPrinter: queued IN packets, recorded OUT writes."""
+
+    def __init__(self, packets):
+        self.packets = list(packets)
+        self.writes = []
+        self.claims = []
+
+    def endpoint_map(self):
+        return hpstatus.parse_endpoint_map(CONFIG_DESCRIPTOR)
+
+    @contextmanager
+    def claimed(self, interface, alt=0):
+        self.claims.append(interface)
+        yield
+
+    def bulk_write(self, endpoint, payload):
+        self.writes.append((endpoint, payload))
+
+    def bulk_read(self, endpoint, timeout_ms):
+        return self.packets.pop(0) if self.packets else None
+
+
+def test_ledm_client_drains_stale_bytes_and_reads_zero_padded_chunked_reply():
+    reply = (
+        b"HTTP/1.1 200 OK\r\nServer: Mrvl-R1_0\r\nTransfer-Encoding: chunked\r\n\r\n"
+        b"0005\r\n<a/>\n\r\n0000\r\n\r\n"
+    )
+    stale = [b"leftover of an older response", None]
+    printer = FakeUsbPrinter([*stale, b"", reply[:40], b"", reply[40:]])
+    response = hpstatus.LedmClient(printer).fetch("/DevMgmt/X.xml")
+    assert printer.claims == [1]
+    assert printer.writes == [
+        (
+            0x02,
+            b"GET /DevMgmt/X.xml HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+    ]
+    assert response.body == "<a/>\n"
+    assert response.server == "Mrvl-R1_0"
+    assert response.status == "HTTP/1.1 200 OK"
+    assert response.wire_bytes == len(reply)
+
+
+def test_response_complete_accepts_zero_padded_last_chunk_only_at_the_end():
+    head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+    assert hpstatus.response_complete(head + b"0003\r\nabc\r\n0000\r\n\r\n")
+    assert hpstatus.response_complete(head + b"0003\r\nabc\r\n0\r\n\r\n")
+    assert not hpstatus.response_complete(head + b"0003\r\nabc\r\n")
+    assert not hpstatus.response_complete(b"HTTP/1.1 200 OK\r\n")
 
 
 def test_macos_topology_finds_printer_behind_hub_and_scales_bus_power():

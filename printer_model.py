@@ -453,17 +453,16 @@ def cups_queue_state():
         return " ".join(out.read().split()) or "sem resposta do lpstat"
 
 
-def fetch_roots(handle, report):
-    layout = hpstatus.interfaces(handle)
+def fetch_roots(ledm, report):
     roots = {}
     for key, path in LEDM_PATHS.items():
         expected = path.rsplit("/", 1)[-1].removesuffix(".xml")
         started = time.monotonic()
         try:
-            response = hpstatus.ledm_fetch(handle, layout, path)
-            roots[key] = parse(response["body"], expected)
-            report.wire_bytes[path] = response["wire_bytes"]
-            report.http_server = response["server"] or report.http_server
+            response = ledm.fetch(path)
+            roots[key] = parse(response.body, expected)
+            report.wire_bytes[path] = response.wire_bytes
+            report.http_server = response.server or report.http_server
             report.revisions[expected] = text(roots[key], "Version/Revision")
         except (hpstatus.UsbError, ValueError, ET.ParseError) as error:
             report.errors.append(f"{path}: {error}")
@@ -472,20 +471,17 @@ def fetch_roots(handle, report):
 
 
 def collect():
-    handle = hpstatus.open_printer()
-    try:
+    with hpstatus.UsbPrinter.open() as usb:
         report = Report(
-            device_id=hpstatus.device_id(handle),
-            port=hpstatus.port_status(handle),
+            device_id=usb.device_id(),
+            port=usb.port_status(),
             queue=cups_queue_state(),
             read_at=datetime.now(),
-            usb=hpstatus.link_info(handle),
-            endpoints=hpstatus.endpoint_map(handle),
+            usb=usb.link_info(),
+            endpoints=usb.endpoint_map(),
             topology=macos_usb.usb_topology(),
         )
-        roots = fetch_roots(handle, report)
-    finally:
-        hpstatus.lib.libusb_close(handle)
+        roots = fetch_roots(hpstatus.LedmClient(usb), report)
 
     if "config" in roots:
         report.identity = read_identity(roots["config"])

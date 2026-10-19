@@ -1,9 +1,12 @@
-"""Low-level status reader for the HP LaserJet CP1025 over USB (libusb-1.0 via ctypes).
+"""USB transport for the HP LaserJet CP1025 (libusb-1.0 via ctypes).
+
+UsbPrinter owns the device handle (descriptors, IEEE 1284 printer-class requests, raw bulk
+transfers). LedmClient speaks HP's LEDM protocol, HTTP/1.1 over the vendor USB interface.
 
 Usage: python3 hpstatus.py [LEDM_PATH ...]
 Without paths it prints the IEEE 1284 device id, the printer-class port status and the
 USB interface/endpoint map. Each LEDM_PATH (e.g. /DevMgmt/ConsumableConfigDyn.xml) is
-fetched with HTTP over the vendor LEDM interface.
+fetched over LEDM and printed.
 """
 
 import ctypes
@@ -11,6 +14,8 @@ import ctypes.util
 import re
 import sys
 import time
+from contextlib import contextmanager
+from dataclasses import dataclass
 
 VENDOR_ID = 0x03F0
 PRODUCT_ID = 0x112A
@@ -18,6 +23,7 @@ TIMEOUT_MS = 5000
 DRAIN_TIMEOUT_MS = 300
 READ_CHUNK = 16384
 MAX_EMPTY_READS = 5
+CONFIG_DESCRIPTOR_MAX = 512
 # This firmware zero-pads chunk sizes, so the last chunk is "0000", not "0".
 CHUNKED_END = re.compile(rb"(^|\r\n)0+\r\n\r\n$")
 LEDM_CLASS = (0xFF, 0x04)
@@ -82,65 +88,14 @@ class UsbError(RuntimeError):
         super().__init__(f"{what}: {lib.libusb_error_name(code).decode()}")
 
 
-def open_printer():
-    if lib.libusb_init(None) != 0:
-        raise RuntimeError("libusb_init failed")
-    handle = lib.libusb_open_device_with_vid_pid(None, VENDOR_ID, PRODUCT_ID)
-    if not handle:
-        raise RuntimeError("printer not found on USB")
-    return handle
-
-
-def control_in(handle, request_type, request, value, index, length):
-    buf = ctypes.create_string_buffer(length)
-    n = lib.libusb_control_transfer(
-        handle, request_type, request, value, index, buf, length, TIMEOUT_MS
-    )
-    if n < 0:
-        raise UsbError(f"control request {request}", n)
-    return buf.raw[:n]
-
-
 def bcd(value):
     return f"{value >> 8:x}.{value & 0xFF:02x}"
 
 
-def string_descriptor(handle, index):
-    if not index:
-        return ""
-    buf = ctypes.create_string_buffer(256)
-    n = lib.libusb_get_string_descriptor_ascii(handle, index, buf, 256)
-    return buf.raw[:n].decode(errors="replace") if n > 0 else ""
-
-
-def link_info(handle):
-    """USB device + configuration descriptor fields and negotiated bus speed."""
-    device = control_in(handle, 0x80, 6, 0x0100, 0, 18)
-    config = control_in(handle, 0x80, 6, 0x0200, 0, 9)
-    speed = lib.libusb_get_device_speed(lib.libusb_get_device(handle))
-    return {
-        "usb_version": bcd(int.from_bytes(device[2:4], "little")),
-        "device_release": bcd(int.from_bytes(device[12:14], "little")),
-        "vendor_product": f"{int.from_bytes(device[8:10], 'little'):04x}:"
-        f"{int.from_bytes(device[10:12], 'little'):04x}",
-        "manufacturer": string_descriptor(handle, device[14]),
-        "product": string_descriptor(handle, device[15]),
-        "serial": string_descriptor(handle, device[16]),
-        "ep0_max_packet": device[7],
-        "interfaces": config[4],
-        "self_powered": bool(config[7] & 0x40),
-        "remote_wakeup": bool(config[7] & 0x20),
-        "configuration": config[5],
-        "total_descriptor_bytes": int.from_bytes(config[2:4], "little"),
-        "max_power_ma": config[8] * 2,
-        "speed": USB_SPEEDS.get(speed, f"unknown ({speed})"),
-    }
-
-
-def endpoint_map(handle):
-    """Every interface with all of its endpoints (address, direction, type, packet size, interval)."""
-    raw = control_in(handle, 0x80, 6, 0x0200, 0, 512)
+def parse_endpoint_map(config_descriptor):
+    """Every interface in a raw configuration descriptor, with all of its endpoints."""
     result, pos = [], 0
+    raw = config_descriptor
     while pos + 1 < len(raw):
         length, kind = raw[pos], raw[pos + 1]
         if length == 0:
@@ -170,110 +125,185 @@ def endpoint_map(handle):
     return result
 
 
-def interfaces(handle):
-    """Parse the raw configuration descriptor into {(iface, alt): {class, out, in}}."""
-    raw = control_in(handle, 0x80, 6, 0x0200, 0, 512)
-    result, current, pos = {}, None, 0
-    while pos + 1 < len(raw):
-        length, kind = raw[pos], raw[pos + 1]
-        if length == 0:
-            break
-        if kind == 4:
-            current = (raw[pos + 2], raw[pos + 3])
-            result[current] = {
-                "class": (raw[pos + 5], raw[pos + 6], raw[pos + 7]),
-                "out": None,
-                "in": None,
-            }
-        elif kind == 5 and current is not None and raw[pos + 3] & 0x03 == 2:
-            address = raw[pos + 2]
-            result[current]["in" if address & 0x80 else "out"] = address
-        pos += length
-    return result
-
-
-def device_id(handle):
-    """IEEE 1284 GET_DEVICE_ID (printer class request 0)."""
-    raw = control_in(handle, 0xA1, 0, 0, 0, 1024)
-    return raw[2:].decode(errors="replace")
-
-
-def port_status(handle):
+def parse_port_status(byte):
     """Printer class GET_PORT_STATUS: bit3 = no error, bit4 = selected, bit5 = paper empty."""
-    b = control_in(handle, 0xA1, 1, 0, 0, 1)[0]
     return {
-        "raw": hex(b),
-        "paper_empty": bool(b & 0x20),
-        "selected": bool(b & 0x10),
-        "error": not b & 0x08,
+        "raw": hex(byte),
+        "paper_empty": bool(byte & 0x20),
+        "selected": bool(byte & 0x10),
+        "error": not byte & 0x08,
     }
 
 
-def drain(handle, ep_in):
-    """Discard leftovers of an earlier response so the next read matches the next request."""
-    buf, got = ctypes.create_string_buffer(READ_CHUNK), ctypes.c_int()
-    empty_reads = 0
-    while empty_reads < MAX_EMPTY_READS:
-        rc = lib.libusb_bulk_transfer(
-            handle, ep_in, buf, READ_CHUNK, ctypes.byref(got), DRAIN_TIMEOUT_MS
+class UsbPrinter:
+    """Open libusb handle to the printer. Use as a context manager so it is always closed."""
+
+    def __init__(self, handle):
+        self._handle = handle
+
+    @classmethod
+    def open(cls, vendor_id=VENDOR_ID, product_id=PRODUCT_ID):
+        if lib.libusb_init(None) != 0:
+            raise RuntimeError("libusb_init failed")
+        handle = lib.libusb_open_device_with_vid_pid(None, vendor_id, product_id)
+        if not handle:
+            raise RuntimeError("printer not found on USB")
+        return cls(handle)
+
+    def close(self):
+        lib.libusb_close(self._handle)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        self.close()
+
+    def control_in(self, request_type, request, value, index, length):
+        buf = ctypes.create_string_buffer(length)
+        n = lib.libusb_control_transfer(
+            self._handle, request_type, request, value, index, buf, length, TIMEOUT_MS
         )
+        if n < 0:
+            raise UsbError(f"control request {request}", n)
+        return buf.raw[:n]
+
+    def string_descriptor(self, index):
+        if not index:
+            return ""
+        buf = ctypes.create_string_buffer(256)
+        n = lib.libusb_get_string_descriptor_ascii(self._handle, index, buf, 256)
+        return buf.raw[:n].decode(errors="replace") if n > 0 else ""
+
+    def device_id(self):
+        """IEEE 1284 GET_DEVICE_ID (printer class request 0)."""
+        return self.control_in(0xA1, 0, 0, 0, 1024)[2:].decode(errors="replace")
+
+    def port_status(self):
+        return parse_port_status(self.control_in(0xA1, 1, 0, 0, 1)[0])
+
+    def endpoint_map(self):
+        return parse_endpoint_map(
+            self.control_in(0x80, 6, 0x0200, 0, CONFIG_DESCRIPTOR_MAX)
+        )
+
+    def link_info(self):
+        """USB device + configuration descriptor fields and negotiated bus speed."""
+        device = self.control_in(0x80, 6, 0x0100, 0, 18)
+        config = self.control_in(0x80, 6, 0x0200, 0, 9)
+        speed = lib.libusb_get_device_speed(lib.libusb_get_device(self._handle))
+        return {
+            "usb_version": bcd(int.from_bytes(device[2:4], "little")),
+            "device_release": bcd(int.from_bytes(device[12:14], "little")),
+            "vendor_product": f"{int.from_bytes(device[8:10], 'little'):04x}:"
+            f"{int.from_bytes(device[10:12], 'little'):04x}",
+            "manufacturer": self.string_descriptor(device[14]),
+            "product": self.string_descriptor(device[15]),
+            "serial": self.string_descriptor(device[16]),
+            "ep0_max_packet": device[7],
+            "interfaces": config[4],
+            "self_powered": bool(config[7] & 0x40),
+            "remote_wakeup": bool(config[7] & 0x20),
+            "configuration": config[5],
+            "total_descriptor_bytes": int.from_bytes(config[2:4], "little"),
+            "max_power_ma": config[8] * 2,
+            "speed": USB_SPEEDS.get(speed, f"unknown ({speed})"),
+        }
+
+    @contextmanager
+    def claimed(self, interface, alt=0):
+        rc = lib.libusb_claim_interface(self._handle, interface)
         if rc != 0:
-            return
-        empty_reads = 0 if got.value else empty_reads + 1
+            raise UsbError(f"claim interface {interface}", rc)
+        try:
+            if alt:
+                lib.libusb_set_interface_alt_setting(self._handle, interface, alt)
+            yield
+        finally:
+            lib.libusb_release_interface(self._handle, interface)
 
-
-def bulk_exchange(handle, iface, alt, ep_out, ep_in, payload):
-    rc = lib.libusb_claim_interface(handle, iface)
-    if rc != 0:
-        raise UsbError(f"claim interface {iface}", rc)
-    try:
-        if alt:
-            lib.libusb_set_interface_alt_setting(handle, iface, alt)
-        drain(handle, ep_in)
+    def bulk_write(self, endpoint, payload):
         sent = ctypes.c_int()
         rc = lib.libusb_bulk_transfer(
-            handle, ep_out, payload, len(payload), ctypes.byref(sent), TIMEOUT_MS
+            self._handle,
+            endpoint,
+            payload,
+            len(payload),
+            ctypes.byref(sent),
+            TIMEOUT_MS,
         )
         if rc != 0:
             raise UsbError("bulk write", rc)
-        # The device answers late and sends zero-length packets meanwhile, so read until the
-        # response is complete or the deadline passes, never until the first empty read.
-        data, buf, got = b"", ctypes.create_string_buffer(READ_CHUNK), ctypes.c_int()
-        deadline = time.monotonic() + TIMEOUT_MS / 1000
-        while not response_complete(data) and time.monotonic() < deadline:
-            rc = lib.libusb_bulk_transfer(
-                handle, ep_in, buf, READ_CHUNK, ctypes.byref(got), TIMEOUT_MS
-            )
-            if rc != 0:
-                break
-            data += buf.raw[: got.value]
-        return data
-    finally:
-        lib.libusb_release_interface(handle, iface)
+
+    def bulk_read(self, endpoint, timeout_ms):
+        """One bulk IN transfer. b"" is a zero-length packet; None means nothing arrived in time."""
+        buf, got = ctypes.create_string_buffer(READ_CHUNK), ctypes.c_int()
+        rc = lib.libusb_bulk_transfer(
+            self._handle, endpoint, buf, READ_CHUNK, ctypes.byref(got), timeout_ms
+        )
+        return buf.raw[: got.value] if rc == 0 else None
 
 
-def ledm_get(handle, layout, path):
-    return ledm_fetch(handle, layout, path)["body"]
+@dataclass(frozen=True)
+class LedmResponse:
+    status: str
+    server: str
+    wire_bytes: int
+    body: str
 
 
-def ledm_fetch(handle, layout, path):
-    """GET over LEDM; returns body plus wire metadata (status line, Server header, bytes)."""
-    (iface, alt), info = next(
-        (k, v) for k, v in layout.items() if v["class"][:2] == LEDM_CLASS
-    )
-    request = (
-        f"GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".encode()
-    )
-    raw = bulk_exchange(handle, iface, alt, info["out"], info["in"], request)
-    server = re.search(
-        rb"^server:\s*(.+?)\r?$", raw.partition(b"\r\n\r\n")[0], re.I | re.M
-    )
-    return {
-        "status": http_status(raw),
-        "server": server.group(1).decode(errors="replace") if server else "",
-        "wire_bytes": len(raw),
-        "body": http_body(raw),
-    }
+class LedmClient:
+    """HTTP/1.1 GET over the LEDM vendor interface (class ff/04) of a UsbPrinter."""
+
+    def __init__(self, printer):
+        self._printer = printer
+        ledm = next(
+            i for i in printer.endpoint_map() if tuple(i["class"][:2]) == LEDM_CLASS
+        )
+        bulk = [e for e in ledm["endpoints"] if e["type"] == "bulk"]
+        self._interface, self._alt = ledm["number"], ledm["alt"]
+        self._out = next(e["address"] for e in bulk if e["direction"] == "OUT")
+        self._in = next(e["address"] for e in bulk if e["direction"] == "IN")
+
+    def get(self, path):
+        return self.fetch(path).body
+
+    def fetch(self, path):
+        request = f"GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".encode()
+        raw = self._exchange(request)
+        server = re.search(
+            rb"^server:\s*(.+?)\r?$", raw.partition(b"\r\n\r\n")[0], re.I | re.M
+        )
+        return LedmResponse(
+            status=http_status(raw),
+            server=server.group(1).decode(errors="replace") if server else "",
+            wire_bytes=len(raw),
+            body=http_body(raw),
+        )
+
+    def _exchange(self, request):
+        with self._printer.claimed(self._interface, self._alt):
+            self._drain()
+            self._printer.bulk_write(self._out, request)
+            # The device answers late and sends zero-length packets meanwhile, so read until
+            # the response is complete or the deadline passes, never until the first empty read.
+            data = b""
+            deadline = time.monotonic() + TIMEOUT_MS / 1000
+            while not response_complete(data) and time.monotonic() < deadline:
+                chunk = self._printer.bulk_read(self._in, TIMEOUT_MS)
+                if chunk is None:
+                    break
+                data += chunk
+            return data
+
+    def _drain(self):
+        """Discard leftovers of an earlier response so the next read matches the next request."""
+        empty_reads = 0
+        while empty_reads < MAX_EMPTY_READS:
+            chunk = self._printer.bulk_read(self._in, DRAIN_TIMEOUT_MS)
+            if chunk is None:
+                return
+            empty_reads = 0 if chunk else empty_reads + 1
 
 
 def response_complete(raw):
@@ -306,17 +336,14 @@ def http_body(raw):
 
 
 if __name__ == "__main__":
-    h = open_printer()
-    try:
-        layout = interfaces(h)
-        print("INTERFACES:", layout)
-        print("DEVICE_ID:", device_id(h))
-        print("PORT_STATUS:", port_status(h))
+    with UsbPrinter.open() as usb:
+        print("ENDPOINTS:", usb.endpoint_map())
+        print("DEVICE_ID:", usb.device_id())
+        print("PORT_STATUS:", usb.port_status())
+        ledm = LedmClient(usb)
         for p in sys.argv[1:]:
             print(f"===== {p}")
             try:
-                print(ledm_get(h, layout, p))
+                print(ledm.get(p))
             except UsbError as e:
                 print("ERROR", e)
-    finally:
-        lib.libusb_close(h)
