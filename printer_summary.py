@@ -15,34 +15,25 @@ import dataclasses
 import json
 import sys
 import time
-from collections import deque
 from datetime import datetime
 
 from rich.console import Console
 from rich.live import Live
 from rich.text import Text
 
-import history
 import web_dashboard
 from dashboard import live_layout, render
 from hpstatus import UsbError
-from printer_model import SEVERITY_ERROR, collect
+from poller import Poller
+from printer_model import SEVERITY_ERROR
 
 DEFAULT_WARN_PERCENT = 20
 MIN_WATCH_SECONDS = 5
-# A full LEDM read measured ~205 ms; 1 s cadence keeps the USB link busy ~20% of the time.
-LIVE_MIN_SECONDS = 1.0
-LIVE_DUTY_FACTOR = 4
-CHANGE_FEED_SIZE = 12
+LIVE_FEED_SIZE = 12
 
 
-def read_and_record():
-    report = collect()
-    entries = history.record(report)
-    return report, entries, history.forecast(entries)
-
-
-def as_json(report, warn_percent, prediction):
+def as_json(reading, warn_percent):
+    report, prediction = reading.report, reading.prediction
     payload = dataclasses.asdict(report)
     payload["severity"] = report.severity(warn_percent)
     payload["pages_per_day"] = prediction.pages_per_day
@@ -53,19 +44,20 @@ def as_json(report, warn_percent, prediction):
     return json.dumps(payload, default=str, ensure_ascii=False, indent=2)
 
 
-def watch_footer(report, interval):
+def watch_footer(reading, seconds):
     return Text(
-        f"Ctrl+C para sair · atualiza a cada {interval}s · última leitura {report.read_at:%H:%M:%S}",
+        f"Ctrl+C para sair · atualiza a cada {seconds}s · "
+        f"última leitura {reading.report.read_at:%H:%M:%S}",
         style="grey62",
     )
 
 
-def live_footer(report, reads, read_ms, interval):
+def live_footer(reading):
     return Text.assemble(
         ("● AO VIVO", "bold red"),
         (
-            f"  ·  leitura nº {reads} às {report.read_at:%H:%M:%S}  ·  {read_ms:.0f} ms"
-            f"  ·  próxima em {interval:.1f}s  ·  Ctrl+C para sair",
+            f"  ·  leitura nº {reading.number} às {reading.report.read_at:%H:%M:%S}"
+            f"  ·  {reading.read_ms:.0f} ms  ·  próxima em {reading.next_in:.1f}s  ·  Ctrl+C para sair",
             "grey62",
         ),
     )
@@ -78,51 +70,40 @@ def failed_footer(error):
     )
 
 
-def live_interval(read_seconds):
-    """Keep the USB link idle most of the time: wait at least LIVE_DUTY_FACTOR x the read time."""
-    return max(LIVE_MIN_SECONDS, read_seconds * LIVE_DUTY_FACTOR)
-
-
-def monitor(console, warn_percent, interval=None):
-    """Full-screen loop. interval=None means --live: adaptive cadence plus the change feed."""
-    live_mode = interval is None
-    changes = deque(maxlen=CHANGE_FEED_SIZE) if live_mode else None
-    started = time.monotonic()
-    report, entries, prediction = read_and_record()
-    read_seconds = time.monotonic() - started
-    reads = 1
-    wait = live_interval(read_seconds) if live_mode else interval
-
-    def frame(footer):
-        return live_layout(report, warn_percent, entries, prediction, footer, changes)
-
-    def footer():
-        if live_mode:
-            return live_footer(report, reads, read_seconds * 1000, wait)
-        return watch_footer(report, interval)
-
+def fullscreen(console, poller, frame, pause):
+    """Redraw `frame(reading, error)` after every poll; a failed poll keeps the last reading."""
+    reading = poller.tick()
     with Live(
-        frame(footer()), console=console, screen=True, refresh_per_second=4
+        frame(reading, None), console=console, screen=True, refresh_per_second=4
     ) as live:
         while True:
-            time.sleep(wait)
-            previous = report
-            started = time.monotonic()
+            time.sleep(pause(reading))
             try:
-                report, entries, prediction = read_and_record()
+                reading = poller.tick()
             except (UsbError, RuntimeError) as error:
-                # Keep showing the last good reading; the printer may be busy printing.
-                live.update(frame(failed_footer(error)))
+                live.update(frame(reading, error))
                 continue
-            read_seconds = time.monotonic() - started
-            reads += 1
-            if live_mode:
-                wait = live_interval(read_seconds)
-                changes.extend(
-                    (report.read_at, change)
-                    for change in report.changes_since(previous)
-                )
-            live.update(frame(footer()))
+            live.update(frame(reading, None))
+
+
+def live(console, warn_percent):
+    """Adaptive ~1 s cadence plus the change feed."""
+
+    def frame(reading, error):
+        footer = failed_footer(error) if error else live_footer(reading)
+        return live_layout(reading, warn_percent, footer, changes=reading.changes)
+
+    fullscreen(console, Poller(feed_size=LIVE_FEED_SIZE), frame, lambda r: r.next_in)
+
+
+def watch(console, warn_percent, seconds):
+    """Fixed interval, no change feed."""
+
+    def frame(reading, error):
+        footer = failed_footer(error) if error else watch_footer(reading, seconds)
+        return live_layout(reading, warn_percent, footer)
+
+    fullscreen(console, Poller(), frame, lambda _: seconds)
 
 
 def main():
@@ -173,11 +154,11 @@ def main():
         if args.web:
             web_dashboard.serve(args.warn, args.port)
         if args.live:
-            monitor(console, args.warn)
+            live(console, args.warn)
         if args.watch:
-            monitor(console, args.warn, args.watch)
+            watch(console, args.warn, args.watch)
         with console.status("Lendo a impressora pela USB..."):
-            report, entries, prediction = read_and_record()
+            reading = Poller().tick()
     except KeyboardInterrupt:
         return 0
     except (UsbError, RuntimeError) as error:
@@ -187,10 +168,10 @@ def main():
         return SEVERITY_ERROR
 
     if args.json:
-        print(as_json(report, args.warn, prediction))
+        print(as_json(reading, args.warn))
     else:
-        render(report, args.warn, console, entries, prediction, full=args.full)
-    return report.severity(args.warn)
+        render(reading, args.warn, console, full=args.full)
+    return reading.report.severity(args.warn)
 
 
 if __name__ == "__main__":

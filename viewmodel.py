@@ -372,13 +372,14 @@ def consumable_view(c, report, warn_percent, entries, prediction):
     }
 
 
-def build_payload(report, warn_percent, entries, prediction, changes, reads, read_ms):
+def build_payload(reading, warn_percent):
     """The web page's whole state: every string pre-formatted, the page only lays it out."""
+    report, entries, prediction = reading.report, reading.entries, reading.prediction
     severity = report.severity(warn_percent)
     return {
         "read_at": report.read_at.isoformat(timespec="seconds"),
-        "reads": reads,
-        "read_ms": round(read_ms),
+        "reads": reading.number,
+        "read_ms": round(reading.read_ms),
         "warn_percent": warn_percent,
         "severity": severity,
         "verdict": SEVERITY_LABELS[severity],
@@ -412,7 +413,8 @@ def build_payload(report, warn_percent, entries, prediction, changes, reads, rea
             for seq, code, page in report.events
         ],
         "changes": [
-            {"at": f"{at:%H:%M:%S}", "text": text} for at, text in reversed(changes)
+            {"at": f"{at:%H:%M:%S}", "text": text}
+            for at, text in reversed(reading.changes)
         ],
         "usb_bus": usb_bus_rows(report),
         "controller": controller_rows(report),

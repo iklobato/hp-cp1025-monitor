@@ -13,6 +13,7 @@ from rich.console import Console
 
 import history
 import hpstatus
+from hpstatus import UsbError
 import macos_usb
 import web_dashboard
 from dashboard import live_layout, render
@@ -38,7 +39,8 @@ from printer_model import (
     read_consumables,
     years_since,
 )
-from printer_summary import LIVE_MIN_SECONDS, as_json, live_interval
+from poller import MIN_INTERVAL_SECONDS, Poller, Reading, interval_after
+from printer_summary import as_json
 
 NS = 'xmlns:dd="http://www.hp.com/schemas/imaging/con/dictionaries/1.0/"'
 
@@ -60,6 +62,18 @@ USAGE = f"""<pudyn:ProductUsageDyn xmlns:pudyn="urn:u" {NS}>
 </pudyn:Consumable></pudyn:ConsumableSubunit></pudyn:ProductUsageDyn>"""
 
 PORT_OK = {"raw": "0x18", "selected": True, "error": False, "paper_empty": False}
+
+
+def reading_of(report, changes=(), number=1, read_ms=1.0):
+    return Reading(
+        report=report,
+        entries=[],
+        prediction=history.Forecast(None, None, 0, 0),
+        changes=tuple(changes),
+        number=number,
+        read_ms=read_ms,
+        next_in=MIN_INTERVAL_SECONDS,
+    )
 
 
 def sample_report(alerts=(), read_at=datetime(2026, 10, 18, 12, 0), total=10, color=4):
@@ -177,7 +191,11 @@ def test_sparkline_maps_levels_and_gaps():
 
 def test_render_full_report_without_printer():
     console = Console(file=io.StringIO(), width=110, record=True)
-    render(sample_report(), 20, console, [], history.Forecast(None, None, 0, 0))
+    render(
+        reading_of(sample_report()),
+        20,
+        console,
+    )
     out = console.export_text()
     assert "COM PROBLEMAS" in out
     assert "chip não lido" in out
@@ -187,9 +205,13 @@ def test_render_full_report_without_printer():
 
 def test_default_view_hides_details_and_full_shows_them():
     short = Console(file=io.StringIO(), width=110, record=True)
-    render(sample_report(), 20, short, [], history.Forecast(None, None, 0, 0))
+    render(
+        reading_of(sample_report()),
+        20,
+        short,
+    )
     full = Console(file=io.StringIO(), width=110, record=True)
-    render(sample_report(), 20, full, [], history.Forecast(None, None, 0, 0), full=True)
+    render(reading_of(sample_report()), 20, full, full=True)
     assert "Log de eventos" not in short.export_text()
     assert "Log de eventos" in full.export_text()
 
@@ -198,11 +220,9 @@ def test_no_cell_is_truncated_at_80_or_110_columns():
     for width in (80, 110):
         console = Console(file=io.StringIO(), width=width, record=True)
         render(
-            sample_report(),
+            reading_of(sample_report()),
             20,
             console,
-            [],
-            history.Forecast(None, None, 0, 0),
             full=True,
         )
         assert "…" not in console.export_text(), width
@@ -223,11 +243,7 @@ def test_humanize_firmware_tokens_and_cups_queue():
 
 def test_live_layout_renders_at_terminal_size():
     console = Console(file=io.StringIO(), width=140, height=50, record=True)
-    console.print(
-        live_layout(
-            sample_report(), 20, [], history.Forecast(None, None, 0, 0), "rodape"
-        )
-    )
+    console.print(live_layout(reading_of(sample_report()), 20, "rodape"))
     out = console.export_text()
     assert "Níveis" in out and "O que fazer agora" in out and "rodape" in out
 
@@ -252,25 +268,80 @@ def test_changes_since_is_empty_for_identical_readings():
     assert sample_report().changes_since(sample_report()) == []
 
 
-def test_live_interval_never_below_minimum_and_backs_off_on_slow_reads():
-    assert live_interval(0.2) == LIVE_MIN_SECONDS
-    assert live_interval(0.5) == 2.0
+class ScriptedReader:
+    """Returns the queued reports in order; a queued exception is raised instead."""
+
+    def __init__(self, *results):
+        self.results = list(results)
+
+    def read(self):
+        result = self.results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+class SteppingClock:
+    def __init__(self, step):
+        self.now, self.step = 0.0, step
+
+    def __call__(self):
+        self.now += self.step
+        return self.now
+
+
+def test_poller_feeds_changes_counts_readings_and_paces_by_read_time():
+    first = sample_report(total=100)
+    second = sample_report(total=102)
+    recorded = []
+    poller = Poller(
+        reader=ScriptedReader(first, second),
+        record=lambda report: recorded.append(history.snapshot(report))
+        or list(recorded),
+        clock=SteppingClock(0.5),
+    )
+    one = poller.tick()
+    two = poller.tick()
+    assert (one.number, two.number) == (1, 2)
+    assert one.changes == ()
+    assert two.changes == ((second.read_at, "+2 página(s) impressa(s), total 102"),)
+    assert two.read_ms == 500 and two.next_in == interval_after(0.5) == 2.0
+    assert [e["total_pages"] for e in two.entries] == [100, 102]
+
+
+def test_poller_failure_propagates_and_keeps_last_good_reading_as_diff_base():
+    poller = Poller(
+        reader=ScriptedReader(
+            sample_report(total=100),
+            UsbError("bulk write", -7),
+            sample_report(total=101),
+        ),
+        record=lambda report: [],
+    )
+    poller.tick()
+    try:
+        poller.tick()
+        raise AssertionError("USB failure swallowed")
+    except UsbError:
+        pass
+    third = poller.tick()
+    assert third.number == 2
+    assert [text for _, text in third.changes] == [
+        "+1 página(s) impressa(s), total 101"
+    ]
+
+
+def test_interval_never_below_minimum_and_backs_off_on_slow_reads():
+    assert interval_after(0.2) == MIN_INTERVAL_SECONDS
+    assert interval_after(0.5) == 2.0
 
 
 def test_live_layout_shows_change_feed_only_in_live_mode():
     feed = [(datetime(2026, 10, 18, 22, 0, 1), "+1 página(s) impressa(s), total 11")]
     live = Console(file=io.StringIO(), width=150, height=50, record=True)
-    live.print(
-        live_layout(
-            sample_report(), 20, [], history.Forecast(None, None, 0, 0), "rodape", feed
-        )
-    )
+    live.print(live_layout(reading_of(sample_report()), 20, "rodape", feed))
     watch = Console(file=io.StringIO(), width=150, height=50, record=True)
-    watch.print(
-        live_layout(
-            sample_report(), 20, [], history.Forecast(None, None, 0, 0), "rodape"
-        )
-    )
+    watch.print(live_layout(reading_of(sample_report()), 20, "rodape"))
     live_text = live.export_text()
     assert "Mudanças ao vivo" in live_text and "22:00:01" in live_text
     assert "Mudanças ao vivo" not in watch.export_text()
@@ -517,11 +588,9 @@ def test_hardware_panels_never_truncate_at_common_widths():
     for width in (80, 100, 120):
         console = Console(file=io.StringIO(), width=width, record=True)
         render(
-            hardware_report(),
+            reading_of(hardware_report()),
             20,
             console,
-            [],
-            history.Forecast(None, None, 0, 0),
             full=True,
         )
         out = console.export_text()
@@ -532,9 +601,7 @@ def test_hardware_panels_never_truncate_at_common_widths():
 
 def test_long_legend_lines_stay_on_one_line_at_80_columns():
     console = Console(file=io.StringIO(), width=80, record=True)
-    render(
-        sample_report(), 20, console, [], history.Forecast(None, None, 0, 0), full=True
-    )
+    render(reading_of(sample_report()), 20, console, full=True)
     lines = console.export_text().splitlines()
     assert any(
         "Bruto = leitura crua do sensor · Mod. = id gravado no chip" in line
@@ -551,13 +618,7 @@ def test_chip_ok_trusts_printer_state_over_present_tag():
 def test_web_payload_carries_actions_tanks_and_hardware():
     feed = [(datetime(2026, 10, 18, 22, 0, 1), "+1 página(s) impressa(s), total 11")]
     payload = build_payload(
-        hardware_report(),
-        20,
-        [],
-        history.Forecast(None, None, 0, 0),
-        feed,
-        reads=3,
-        read_ms=250.4,
+        reading_of(hardware_report(), changes=feed, number=3, read_ms=250.4), 20
     )
     json.dumps(payload, ensure_ascii=False)
     assert (
@@ -584,11 +645,9 @@ def test_web_payload_carries_actions_tanks_and_hardware():
 
 def test_terminal_and_web_show_the_same_status_counter_and_badge_text():
     report = hardware_report()
-    payload = build_payload(
-        report, 20, [], history.Forecast(None, None, 0, 0), [], 1, 1
-    )
+    payload = build_payload(reading_of(report), 20)
     console = Console(file=io.StringIO(), width=150, record=True)
-    render(report, 20, console, [], history.Forecast(None, None, 0, 0), full=True)
+    render(reading_of(report), 20, console, full=True)
     terminal = console.export_text()
     shared = [
         *payload["status_rows"].values(),
@@ -631,9 +690,7 @@ def test_web_server_serves_page_status_and_sse_stream():
 
 
 def test_json_output_is_valid_and_carries_severity():
-    payload = json.loads(
-        as_json(sample_report(), 20, history.Forecast(None, None, 0, 0))
-    )
+    payload = json.loads(as_json(reading_of(sample_report()), 20))
     assert payload["severity"] == SEVERITY_ERROR
     assert payload["consumables"][1]["product_number"] == "CE313A"
 

@@ -528,8 +528,3 @@ class PrinterReader:
                 report.errors.append(f"{path}: {error}")
             report.latency_ms[path] = round((time.monotonic() - started) * 1000)
         return roots
-
-
-def collect():
-    # ponytail: shim for the two loop callers; removed when they move to Poller.
-    return PrinterReader().read()

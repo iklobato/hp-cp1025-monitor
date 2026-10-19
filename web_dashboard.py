@@ -9,22 +9,17 @@ Binds to 127.0.0.1 only and exposes read-only GET endpoints:
 import json
 import threading
 import time
-from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import history
 from hpstatus import UsbError
-from printer_model import collect
+from poller import MIN_INTERVAL_SECONDS, Poller
 from viewmodel import build_payload
 
 PAGE = Path(__file__).with_name("dashboard.html")
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8025
-# Same cadence rule as --live: a full read measured ~275 ms, so 1 s keeps USB mostly idle.
-MIN_INTERVAL_SECONDS = 1.0
-DUTY_FACTOR = 4
 CHANGE_FEED_SIZE = 30
 SSE_KEEPALIVE_SECONDS = 15
 
@@ -32,45 +27,25 @@ SSE_KEEPALIVE_SECONDS = 15
 class PrinterFeed:
     """Owns the USB handle loop; every other thread only reads the latest serialized payload."""
 
-    def __init__(self, warn_percent):
+    def __init__(self, warn_percent, poller=None):
         self.warn_percent = warn_percent
-        self.changes = deque(maxlen=CHANGE_FEED_SIZE)
+        self.poller = poller or Poller(feed_size=CHANGE_FEED_SIZE)
         self.version = 0
         self.payload = json.dumps({"loading": True})
         self.error = ""
         self.updated = threading.Condition()
 
     def run_forever(self):
-        previous, reads, interval = None, 0, MIN_INTERVAL_SECONDS
         while True:
-            started = time.monotonic()
             try:
-                report = collect()
+                reading = self.poller.tick()
             except (UsbError, RuntimeError) as error:
                 self.publish_error(error)
-                time.sleep(interval)
+                time.sleep(MIN_INTERVAL_SECONDS)
                 continue
-            read_seconds = time.monotonic() - started
-            entries = history.record(report)
-            reads += 1
-            if previous is not None:
-                self.changes.extend(
-                    (report.read_at, change)
-                    for change in report.changes_since(previous)
-                )
-            previous = report
-            payload = build_payload(
-                report,
-                self.warn_percent,
-                entries,
-                history.forecast(entries),
-                self.changes,
-                reads,
-                read_seconds * 1000,
-            )
+            payload = build_payload(reading, self.warn_percent)
             self.publish(json.dumps(payload, ensure_ascii=False, default=str))
-            interval = max(MIN_INTERVAL_SECONDS, read_seconds * DUTY_FACTOR)
-            time.sleep(interval)
+            time.sleep(reading.next_in)
 
     def publish(self, payload):
         with self.updated:

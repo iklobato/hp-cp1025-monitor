@@ -441,8 +441,9 @@ def side_by_side(width, left, right):
     return Group(left, right)
 
 
-def render(report, warn_percent, console, entries, prediction, full=False):
+def render(reading, warn_percent, console, full=False):
     """One-shot output: verdict and actions first, levels next, details only when asked."""
+    report, entries, prediction = reading.report, reading.entries, reading.prediction
     console.print(header(report, warn_percent))
     console.print(diagnosis_panel(report, warn_percent, prediction))
     console.print(
@@ -491,8 +492,9 @@ def changes_panel(changes):
     )
 
 
-def live_layout(report, warn_percent, entries, prediction, footer, changes=None):
+def live_layout(reading, warn_percent, footer, changes=None):
     """Full-screen layout for --watch and --live; `changes` adds the live change feed."""
+    report, entries, prediction = reading.report, reading.entries, reading.prediction
     layout = Layout()
     layout.split_column(
         Layout(header(report, warn_percent), name="header", size=3),
