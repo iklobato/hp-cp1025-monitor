@@ -8,6 +8,7 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import IntEnum
 
 import hpstatus
 import macos_usb
@@ -87,7 +88,14 @@ LEDM_PATHS = {
     "media": "/DevMgmt/MediaHandlingDyn.xml",
     "print": "/DevMgmt/PrintConfigDyn.xml",
 }
-SEVERITY_OK, SEVERITY_WARNING, SEVERITY_ERROR = 0, 1, 2
+
+
+class Severity(IntEnum):
+    """Overall verdict; the value is also the process exit code (0 ok, 1 warning, 2 error)."""
+
+    OK = 0
+    WARNING = 1
+    ERROR = 2
 
 
 def local(tag):
@@ -282,14 +290,14 @@ class Report:
             or self.port.get("error")
             or any(a[0] == "Error" for a in self.alerts)
         ):
-            return SEVERITY_ERROR
+            return Severity.ERROR
         if any(c.state not in OK_STATES for c in self.consumables):
-            return SEVERITY_ERROR
+            return Severity.ERROR
         if self.alerts or any(
             c.needs_attention(warn_percent) for c in self.consumables
         ):
-            return SEVERITY_WARNING
-        return SEVERITY_OK
+            return Severity.WARNING
+        return Severity.OK
 
 
 def read_consumables(config_root, usage_root):

@@ -25,7 +25,7 @@ import web_dashboard
 from dashboard import live_layout, render
 from hpstatus import UsbError
 from poller import Poller
-from printer_model import SEVERITY_ERROR
+from printer_model import Severity
 
 DEFAULT_WARN_PERCENT = 20
 MIN_WATCH_SECONDS = 5
@@ -165,7 +165,7 @@ def main():
         console.print(
             Text(f"✖ Não consegui ler a impressora: {error}", style="bold red")
         )
-        return SEVERITY_ERROR
+        return Severity.ERROR
 
     if args.json:
         print(as_json(reading, args.warn))

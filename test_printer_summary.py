@@ -27,9 +27,7 @@ from viewmodel import (
 )
 from printer_model import (
     LEDM_PATHS,
-    SEVERITY_ERROR,
-    SEVERITY_OK,
-    SEVERITY_WARNING,
+    Severity,
     Consumable,
     PrinterReader,
     Report,
@@ -115,14 +113,19 @@ def test_low_level_and_bad_chip_need_attention_but_healthy_does_not():
     assert not Consumable("Magenta", state="ok", percent=40).needs_attention(20)
 
 
+def test_severity_is_the_exit_code_and_serializes_as_a_number():
+    assert [int(level) for level in Severity] == [0, 1, 2]
+    assert json.loads(json.dumps({"severity": Severity.ERROR})) == {"severity": 2}
+
+
 def test_severity_error_for_bad_chip_warning_for_low_only_ok_when_healthy():
-    assert sample_report().severity(20) == SEVERITY_ERROR
+    assert sample_report().severity(20) == Severity.ERROR
     low_only = sample_report()
     low_only.consumables = [Consumable("Magenta", state="ok", percent=15)]
-    assert low_only.severity(20) == SEVERITY_WARNING
+    assert low_only.severity(20) == Severity.WARNING
     healthy = sample_report()
     healthy.consumables = [Consumable("Magenta", state="ok", percent=60)]
-    assert healthy.severity(20) == SEVERITY_OK
+    assert healthy.severity(20) == Severity.OK
 
 
 def test_parse_rejects_stale_response_for_another_resource():
@@ -622,7 +625,7 @@ def test_web_payload_carries_actions_tanks_and_hardware():
     )
     json.dumps(payload, ensure_ascii=False)
     assert (
-        payload["severity"] == SEVERITY_ERROR
+        payload["severity"] == Severity.ERROR
         and payload["reads"] == 3
         and payload["read_ms"] == 250
     )
@@ -691,7 +694,7 @@ def test_web_server_serves_page_status_and_sse_stream():
 
 def test_json_output_is_valid_and_carries_severity():
     payload = json.loads(as_json(reading_of(sample_report()), 20))
-    assert payload["severity"] == SEVERITY_ERROR
+    assert payload["severity"] == Severity.ERROR
     assert payload["consumables"][1]["product_number"] == "CE313A"
 
 

@@ -19,9 +19,7 @@ from rich.text import Text
 from history import level_series, sparkline
 from printer_model import (
     OK_STATES,
-    SEVERITY_ERROR,
-    SEVERITY_OK,
-    SEVERITY_WARNING,
+    Severity,
     event_hint,
     years_since,
 )
@@ -67,9 +65,9 @@ COLOR_STYLES = {
     "OPC": "green",
 }
 SEVERITY_STYLES = {
-    SEVERITY_OK: ("bold black on green", "green"),
-    SEVERITY_WARNING: ("bold black on yellow", "yellow"),
-    SEVERITY_ERROR: ("bold white on red", "red"),
+    Severity.OK: ("bold black on green", "green"),
+    Severity.WARNING: ("bold black on yellow", "yellow"),
+    Severity.ERROR: ("bold white on red", "red"),
 }
 SUPPLY_COLUMNS = [
     ("Item", "left", True),

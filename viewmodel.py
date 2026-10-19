@@ -12,18 +12,16 @@ from printer_model import (
     CONSUMABLE_STATES_PT,
     OK_STATES,
     QUEUE_NAME,
-    SEVERITY_ERROR,
-    SEVERITY_OK,
-    SEVERITY_WARNING,
+    Severity,
     STATUS_CATEGORIES_PT,
     event_hint,
     years_since,
 )
 
 SEVERITY_LABELS = {
-    SEVERITY_OK: "✔ PRONTA",
-    SEVERITY_WARNING: "▲ ATENÇÃO",
-    SEVERITY_ERROR: "✖ COM PROBLEMAS",
+    Severity.OK: "✔ PRONTA",
+    Severity.WARNING: "▲ ATENÇÃO",
+    Severity.ERROR: "✖ COM PROBLEMAS",
 }
 VALUE_WORDS = {
     "brazil": "Brasil",
