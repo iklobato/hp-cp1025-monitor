@@ -16,6 +16,8 @@ See [docs/FINDINGS.md](docs/FINDINGS.md) for everything that was found along the
 
 Monitoring works (terminal and web, about 250 ms per full reading). Printing on the author's unit is still blocked by two cartridges: the black chip is unreadable and the yellow chip is rejected. The ordered next steps, and what is still unverified, are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
 
+Next, the printer moves off the Mac to a network print server on a Raspberry Pi 3 (CUPS + foo2zjs, shared as AirPrint, Tailscale for remote use). All decisions are taken, nothing is built yet: [docs/raspberry/README.md](docs/raspberry/README.md).
+
 ## Requirements
 
 - macOS (tested on 14.6.1, Intel). The USB topology panel uses `ioreg`; everything else is plain libusb.
