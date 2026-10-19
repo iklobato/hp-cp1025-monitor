@@ -38,9 +38,13 @@ Every reading is appended to `history.jsonl` when something changed. With at lea
 
 ### Terminal
 
-| `printer_summary.py` | `--live` |
-|---|---|
-| ![Summary](docs/screenshots/terminal-summary.svg) | ![Live](docs/screenshots/terminal-live.svg) |
+`printer_summary.py`
+
+<img src="docs/screenshots/terminal-summary.svg" alt="One-shot terminal summary" width="100%">
+
+`printer_summary.py --live`
+
+<img src="docs/screenshots/terminal-live.svg" alt="Live full-screen terminal dashboard" width="100%">
 
 `--full` output: [docs/screenshots/terminal-full.svg](docs/screenshots/terminal-full.svg)
 
