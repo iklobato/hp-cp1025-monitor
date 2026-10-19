@@ -8,7 +8,7 @@ Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), Octob
 |---|---|
 | USB link | works: USB 2.0 high speed, behind a USB 2.0 hub (`1a40:0101`) |
 | Status reading (LEDM) | works: full reading in about 270 ms |
-| Terminal and web dashboards | done, tested (30 tests, all passing) |
+| Terminal and web dashboards | done, tested (37 tests, all passing, no printer needed) |
 | Printing | **blocked by cartridges**, not by software |
 | CUPS queue | exists (`HP_LaserJet_CP1025`) but still points at the HP driver, which produces blank pages |
 
@@ -99,6 +99,7 @@ macOS IORegistry reports `Bus Power Available` in 2 mA units (250 = the 500 mA t
 4. Built foo2zjs, found the Ghostscript 600 dpi banding bug and its workaround, produced valid four-plane ZJS.
 5. Found the real blocker: cartridge chip errors, read directly from the printer over LEDM.
 6. Wrote the libusb/LEDM reader, the terminal dashboard (`--full`, `--live`, `--watch`, `--json`), the history and forecast, and the local real-time web dashboard.
+7. Refactored into transport objects (`UsbPrinter`, `LedmClient`), an injectable `PrinterReader`, one shared `Poller`, a rendering-free `viewmodel`, and a `Severity` enum. Terminal output stayed byte-identical and the web page unchanged; the whole read path is now tested without hardware.
 
 ## Still open
 

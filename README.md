@@ -72,16 +72,26 @@ LEDM resources used: `ProductStatusDyn`, `ConsumableConfigDyn`, `ProductUsageDyn
 
 ## Layout
 
+Dependencies point one way: transport, then reading, then polling, then the two front ends, which share one source of wording.
+
+```
+hpstatus (UsbPrinter, LedmClient)  ->  printer_model (PrinterReader -> Report)  ->  poller (Poller -> Reading)
+                                                                                     |-> dashboard (rich)  \
+                                                                                     |-> web_dashboard     -> viewmodel
+```
+
 | File | Role |
 |---|---|
-| `hpstatus.py` | libusb via ctypes: descriptors, printer-class requests, LEDM HTTP transport. Also a small CLI to dump any LEDM path. |
+| `hpstatus.py` | USB transport: `UsbPrinter` owns the libusb handle (descriptors, IEEE 1284 requests, bulk transfers, context manager); `LedmClient` speaks HTTP over the LEDM interface. Also a small CLI to dump any LEDM path. |
 | `macos_usb.py` | where the printer sits on the Mac's USB tree, from `ioreg -a` |
-| `printer_model.py` | reads everything into a `Report`, translations, severity, change detection |
+| `printer_model.py` | `PrinterReader` takes every I/O source as an argument and builds a `Report`; `Consumable`, `Severity`, change detection, LEDM parsing |
 | `history.py` | `history.jsonl` snapshots, sparklines, toner run-out forecast |
-| `dashboard.py` | `rich` terminal rendering (one-shot and full-screen layout) |
-| `web_dashboard.py` + `dashboard.html` | local web server (SSE) and the page |
+| `poller.py` | `Poller.tick()`: one reading, history, diff and adaptive cadence, returned as a `Reading`. Shared by `--live`, `--watch`, the one-shot modes and the web server |
+| `viewmodel.py` | every Portuguese string, formatter and panel row, and the web payload. No rendering library |
+| `dashboard.py` | `rich` terminal rendering only |
+| `web_dashboard.py` + `dashboard.html` | local web server (SSE) and the page, which only lays out pre-formatted strings |
 | `printer_summary.py` | CLI entry point |
-| `test_printer_summary.py` | tests; run with `python3 test_printer_summary.py` (no printer needed) |
+| `test_printer_summary.py` | tests; run with `python3 test_printer_summary.py` (no printer needed: USB, `ioreg` and `lpstat` are faked) |
 
 Dump a raw LEDM resource:
 
