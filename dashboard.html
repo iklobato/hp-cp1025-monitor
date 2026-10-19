@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HP CP1025 ao vivo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect x=%222%22 y=%225%22 width=%2212%22 height=%227%22 rx=%221.5%22 fill=%22%230b6bcb%22/%3E%3Crect x=%224%22 y=%222%22 width=%228%22 height=%224%22 fill=%22%2399a%22/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --ink: #1d2128; --muted: #667085; --line: #e3e6eb; --zebra: #f8f9fb;
+  --ok: #1a7f37; --ok-bg: #dcf5e3; --warn: #9a6700; --warn-bg: #fff4cc; --bad: #c62828; --bad-bg: #fde2e1;
+  --accent: #0b6bcb; --empty: #e9ecf1;
+  --toner-Black: #2b2f36; --toner-Cyan: #0aa3d1; --toner-Magenta: #d1137f; --toner-Yellow: #e8b500; --toner-OPC: #3e9b4f;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1217; --card: #171b22; --ink: #e6e9ef; --muted: #8b95a5; --line: #262c36; --zebra: #1b2028;
+    --ok: #4ac26b; --ok-bg: #12301c; --warn: #e3b341; --warn-bg: #33290d; --bad: #ff7b72; --bad-bg: #3a1716;
+    --accent: #58a6ff; --empty: #232a34; --toner-Black: #d4d8de;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;
+  padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 17px; margin: 0; white-space: nowrap; }
+main { max-width: 1400px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; white-space: nowrap; }
+.span-12 { grid-column: span 12; } .span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; }
+.span-6 { grid-column: span 6; } .span-4 { grid-column: span 4; } .span-8 { grid-column: span 8; }
+@media (max-width: 1000px) { .span-7, .span-5, .span-6, .span-4, .span-8 { grid-column: span 12; } }
+.section-title { grid-column: span 12; margin: 8px 0 -4px; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+.badge { display: inline-flex; gap: 6px; align-items: center; padding: 3px 10px; border-radius: 999px; font-weight: 700; font-size: 13px; white-space: nowrap; }
+.b-ok { background: var(--ok-bg); color: var(--ok); } .b-warn { background: var(--warn-bg); color: var(--warn); } .b-bad { background: var(--bad-bg); color: var(--bad); }
+.verdict { font-size: 15px; padding: 5px 14px; }
+.live { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); white-space: nowrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 0 0 var(--bad); animation: pulse 1.6s infinite; }
+.dot.off { background: var(--muted); animation: none; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(198,40,40,.5); } 70% { box-shadow: 0 0 0 8px rgba(198,40,40,0); } 100% { box-shadow: 0 0 0 0 rgba(198,40,40,0); } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+.spacer { flex: 1; }
+.meta { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.actions { border-left: 5px solid var(--muted); }
+.actions.sev-0 { border-left-color: var(--ok); } .actions.sev-1 { border-left-color: var(--warn); } .actions.sev-2 { border-left-color: var(--bad); }
+.actions ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.actions li { display: flex; gap: 8px; align-items: baseline; }
+.actions li b { white-space: nowrap; }
+.muted { color: var(--muted); }
+.tanks { display: flex; gap: 18px; justify-content: space-around; flex-wrap: wrap; }
+.tank { display: grid; justify-items: center; gap: 6px; width: 112px; text-align: center; }
+.tank .state-bad { white-space: nowrap; font-size: 13px; }
+.tank .vessel { position: relative; width: 56px; height: 150px; border: 2px solid var(--line); border-radius: 10px; background: var(--empty); overflow: hidden; }
+.tank .fill { position: absolute; left: 0; right: 0; bottom: 0; transition: height .6s ease; }
+.tank .unknown { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; color: var(--bad); font-size: 22px; }
+.tank .pct { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.tank .name { font-weight: 700; white-space: nowrap; }
+.tank .sub { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.state-bad { color: var(--bad); font-weight: 700; } .state-warn { color: var(--warn); font-weight: 700; } .state-ok { color: var(--ok); font-weight: 600; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; }
+.kv dt { color: var(--muted); white-space: nowrap; }
+.kv dd { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.kv dd.mono { font-family: var(--mono); font-size: 12.5px; }
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.alert { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bad-bg); color: var(--bad); font-weight: 600; }
+.alert small { font-weight: 400; opacity: .8; font-family: var(--mono); }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 6px 8px; white-space: nowrap; }
+tbody tr:nth-child(even) td { background: var(--zebra); }
+td.num, th.num { text-align: right; }
+.scroll { overflow-x: auto; }
+.bar { display: inline-flex; align-items: center; gap: 8px; }
+.bar .track { width: 110px; height: 10px; border-radius: 5px; background: var(--empty); overflow: hidden; }
+.bar .track i { display: block; height: 100%; }
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+.feed { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; display: grid; gap: 4px; }
+.feed li { display: flex; gap: 10px; }
+.feed time { color: var(--muted); font-family: var(--mono); font-size: 12px; padding-top: 1px; }
+.feed li.new { animation: flash 2s ease-out; }
+@keyframes flash { from { background: var(--warn-bg); } to { background: transparent; } }
+.ratio { display: flex; height: 12px; border-radius: 6px; overflow: hidden; margin: 10px 0 4px; }
+.lat-row { display: grid; grid-template-columns: 150px 1fr 60px; gap: 10px; align-items: center; font-size: 12.5px; }
+.lat-row .track { height: 8px; border-radius: 4px; background: var(--empty); overflow: hidden; }
+.lat-row .track i { display: block; height: 100%; background: var(--accent); }
+details summary { cursor: pointer; font-weight: 700; color: var(--muted); }
+.error-banner { grid-column: span 12; background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 8px 12px; font-weight: 600; }
+.hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>HP LaserJet CP1025</h1>
+  <span id="verdict" class="badge verdict">conectando…</span>
+  <span class="spacer"></span>
+  <span class="live"><span id="dot" class="dot off"></span><span id="liveText">aguardando dados</span></span>
+  <span id="meta" class="meta"></span>
+</header>
+<main>
+  <div id="feedError" class="error-banner hidden" role="status"></div>
+
+  <section id="actionsCard" class="card span-12 actions" aria-live="polite">
+    <h2 id="actionsTitle">O que fazer agora</h2>
+    <ul id="actions"></ul>
+    <p id="nextOut" class="muted" style="margin:10px 0 0"></p>
+  </section>
+
+  <section class="card span-7"><h2>Níveis</h2><div id="tanks" class="tanks"></div></section>
+  <section class="card span-5"><h2>Status</h2><div id="badges" class="badges"></div><dl id="statusKv" class="kv"></dl><div id="alerts"></div></section>
+
+  <section class="card span-12"><h2>Suprimentos</h2><div class="scroll"><table id="supplies"></table></div>
+    <p class="muted" style="margin:8px 0 0;font-size:12px">Restam: páginas estimadas pela própria impressora · Tendência: nível nas últimas leituras · Fim previsto: precisa de histórico de uso.</p></section>
+
+  <section class="card span-6"><h2>Mudanças ao vivo</h2><ul id="changes" class="feed"></ul></section>
+  <section class="card span-6"><h2>Contadores</h2><dl id="counters" class="kv"></dl><div id="ratio" class="ratio"></div><div id="ratioText" class="muted" style="font-size:12px"></div></section>
+
+  <div class="section-title">Hardware</div>
+  <section class="card span-6"><h2>Barramento USB</h2><dl id="usbBus" class="kv"></dl></section>
+  <section class="card span-6"><h2>Controlador e firmware</h2><dl id="controller" class="kv"></dl></section>
+  <section class="card span-7"><h2>Interfaces e endpoints USB</h2><div class="scroll"><table id="endpoints"></table></div></section>
+  <section class="card span-5"><h2>Latência por recurso LEDM</h2><div id="latency" style="display:grid;gap:6px"></div></section>
+
+  <div class="section-title">Detalhes</div>
+  <section class="card span-12"><h2>Cartuchos (dados do chip)</h2><div class="scroll"><table id="chips"></table></div></section>
+  <section class="card span-6"><h2>Log de eventos da impressora</h2><div class="scroll"><table id="events"></table></div></section>
+  <section class="card span-6">
+    <details open><summary>Identificação</summary><dl id="identity" class="kv" style="margin-top:8px"></dl></details>
+    <details style="margin-top:12px"><summary>Configuração</summary><dl id="settings" class="kv" style="margin-top:8px"></dl></details>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "–").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+const num = (v) => v === null || v === undefined ? "–" : Number(v).toLocaleString("pt-BR");
+const toner = (color) => `var(--toner-${color})`;
+const SEVERITY_CLASS = ["b-ok", "b-warn", "b-bad"];
+let lastReadAt = null, lastChangeTop = null;
+
+function kv(el, rows, monoKeys = []) {
+  el.innerHTML = Object.entries(rows).map(([k, v]) =>
+    `<dt>${esc(k)}</dt><dd class="${monoKeys.includes(k) ? "mono" : ""}" title="${esc(v)}">${esc(v)}</dd>`).join("");
+}
+
+function sparkline(values, color) {
+  const pts = values.map((v, i) => [i, v]).filter(([, v]) => v !== null);
+  if (pts.length < 2) return '<span class="muted">–</span>';
+  const w = 90, h = 22, n = Math.max(values.length - 1, 1);
+  const d = pts.map(([i, v], k) => `${k ? "L" : "M"}${(i / n * w).toFixed(1)},${(h - 2 - v / 100 * (h - 4)).toFixed(1)}`).join(" ");
+  return `<svg width="${w}" height="${h}" role="img" aria-label="tendência"><path d="${d}" fill="none" stroke="${color}" stroke-width="2"/></svg>`;
+}
+
+function stateCell(c) {
+  if (!c.ok) return `<span class="state-bad">✖ ${esc(c.state_text)}</span>`;
+  if (c.low) return `<span class="state-warn">▲ baixo</span>`;
+  return `<span class="state-ok">✔ ok</span>`;
+}
+
+function renderHeader(d) {
+  const v = $("verdict");
+  v.textContent = d.verdict;
+  v.className = `badge verdict ${SEVERITY_CLASS[d.severity]}`;
+  document.title = `${d.severity === 0 ? "✔" : d.severity === 1 ? "▲" : "✖"} HP CP1025 ao vivo`;
+  $("meta").textContent = `leitura nº ${d.reads} · ${d.read_ms} ms`;
+  lastReadAt = new Date(d.read_at);
+  const err = $("feedError");
+  err.textContent = d.feed_error || (d.errors || []).join(" · ");
+  err.classList.toggle("hidden", !err.textContent);
+}
+
+function renderActions(d) {
+  $("actionsCard").className = `card span-12 actions sev-${d.severity}`;
+  $("actionsTitle").textContent = `O que fazer agora · aviso em ≤${d.warn_percent}%`;
+  $("actions").innerHTML = d.actions.length
+    ? d.actions.map((a) => `<li><span>➜</span><b style="${a.color ? `color:${toner(a.color)}` : ""}">${esc(a.subject)}:</b><span>${esc(a.advice)}</span></li>`).join("")
+    : '<li class="state-ok">✔ Nada a fazer</li>';
+  $("nextOut").textContent = d.next_out || "";
+}
+
+function renderTanks(d) {
+  $("tanks").innerHTML = d.consumables.map((c) => {
+    const fill = c.percent === null ? '<div class="unknown">?</div>'
+      : `<div class="fill" style="height:${c.percent}%;background:${toner(c.color)}"></div>`;
+    const label = !c.ok ? `<div class="state-bad">✖ ${esc(c.state_text)}</div>`
+      : `<div class="pct ${c.low ? "state-warn" : ""}">${c.low ? "▲ " : ""}${c.percent}%</div><div class="sub">≈${num(c.pages_remaining)} pág.</div>`;
+    return `<div class="tank" role="img" aria-label="${esc(c.name)} ${c.percent ?? "sem leitura"}%">
+      <div class="vessel">${fill}</div><div class="name" style="color:${toner(c.color)}">${esc(c.name)}</div>${label}</div>`;
+  }).join("");
+}
+
+function renderStatus(d) {
+  const b = (ok, yes, no) => `<span class="badge ${ok ? "b-ok" : "b-bad"}">${ok ? "✔" : "✖"} ${ok ? yes : no}</span>`;
+  $("badges").innerHTML = b(d.port.selected, "USB online", "USB offline") + b(!d.port.error, "sem erro na porta", "erro na porta")
+    + b(!d.port.paper_empty, "papel ok", "sem papel") + b(!d.queue.paused, "fila ativa", "fila pausada");
+  kv($("statusKv"), {"Estado": d.status, "Carrossel": `parado no cartucho ${d.carousel || "–"}`, "Fila do Mac": d.queue.text});
+  $("alerts").innerHTML = d.alerts.length
+    ? d.alerts.map((a) => `<div class="alert">${a.severity === "Error" ? "✖" : "▲"} ${esc(a.text)}${a.colors ? ` · ${esc(a.colors)}` : ""} <small>(${esc(a.id)})</small></div>`).join("")
+    : '<div class="state-ok">✔ nenhum alerta ativo</div>';
+}
+
+function renderSupplies(d) {
+  const head = "<thead><tr><th>Item</th><th>Código</th><th>Estado</th><th>Nível</th><th class='num'>Restam</th><th>Tendência</th><th>Fim previsto</th></tr></thead>";
+  const rows = d.consumables.map((c) => `<tr>
+    <td><span class="swatch" style="background:${toner(c.color)}"></span><b>${esc(c.name)}</b></td>
+    <td>${esc(c.code)}</td><td>${stateCell(c)}</td>
+    <td>${c.percent === null ? '<span class="muted">sem leitura</span>'
+      : `<span class="bar"><span class="track"><i style="width:${c.percent}%;background:${toner(c.color)}"></i></span>${c.percent}%</span>`}</td>
+    <td class="num">${num(c.pages_remaining)}</td><td>${sparkline(c.trend, toner(c.color))}</td>
+    <td>${esc(c.empty_date || "–")}</td></tr>`).join("");
+  $("supplies").innerHTML = head + `<tbody>${rows}</tbody>`;
+}
+
+function renderChanges(d) {
+  const top = d.changes[0] ? d.changes[0].at + d.changes[0].text : null;
+  const fresh = top !== null && lastChangeTop !== null && top !== lastChangeTop;
+  $("changes").innerHTML = d.changes.length
+    ? d.changes.map((c, i) => `<li class="${fresh && i === 0 ? "new" : ""}"><time>${esc(c.at)}</time><span>${esc(c.text)}</span></li>`).join("")
+    : '<li class="muted">nenhuma mudança desde que o servidor abriu</li>';
+  lastChangeTop = top;
+}
+
+function renderCounters(d) {
+  const c = d.counters;
+  kv($("counters"), {
+    "Páginas no total": num(c.total), "Preto e branco": num(c.mono), "Coloridas": num(c.color),
+    "Atolamentos": num(c.jams), "Falhas ao puxar papel": num(c.mispicks),
+    "Ritmo": d.pages_per_day ? `${d.pages_per_day.toFixed(1)} pág./dia` : "sem histórico ainda",
+  });
+  const colorPct = c.color_percent ?? 0;
+  $("ratio").innerHTML = `<i style="width:${100 - colorPct}%;background:var(--toner-Black)"></i><i style="width:${colorPct}%;background:var(--toner-Magenta)"></i>`;
+  $("ratioText").textContent = c.color_percent === null ? "" : `P&B ${100 - colorPct}% · cor ${colorPct}%`;
+}
+
+function renderHardware(d) {
+  kv($("usbBus"), d.usb_bus, ["IDs", "Serial USB", "Status 1284", "Endereço"]);
+  kv($("controller"), d.controller, ["Linguagens", "LEDM em"]);
+  const cols = ["If", "Classe", "EP", "Dir", "Tipo", "Pacote", "Interv.", "Uso"];
+  $("endpoints").innerHTML = `<thead><tr>${cols.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>`
+    + d.endpoints.map((r) => `<tr>${cols.map((h) => `<td>${esc(r[h])}</td>`).join("")}</tr>`).join("") + "</tbody>";
+  const lat = Object.entries(d.latency_ms);
+  const max = Math.max(1, ...lat.map(([, v]) => v));
+  $("latency").innerHTML = lat.map(([path, ms]) => `<div class="lat-row"><span class="mono" title="${esc(path)}">${esc(path.split("/").pop().replace(".xml", ""))}</span>
+    <span class="track"><i style="width:${(ms / max * 100).toFixed(0)}%"></i></span><span class="num">${ms} ms</span></div>`).join("");
+}
+
+function renderDetails(d) {
+  const head = "<thead><tr><th>Item</th><th>Marca</th><th>Serial</th><th>Fabricado</th><th class='num'>Idade</th><th>Chip</th><th>Mod.</th><th class='num'>Impressas</th><th class='num'>Rend.</th><th class='num'>Bruto</th><th>Instalado</th><th>Último uso</th></tr></thead>";
+  $("chips").innerHTML = head + "<tbody>" + d.consumables.map((c) => `<tr>
+    <td><span class="swatch" style="background:${toner(c.color)}"></span>${esc(c.name)}</td><td>${esc(c.brand || "–")}</td><td>${esc(c.serial || "–")}</td>
+    <td>${esc(c.manufactured)}</td><td class="num">${c.age_years === null ? "–" : Math.floor(c.age_years) + " anos"}</td>
+    <td class="${c.chip_ok ? "state-ok" : "state-bad"}">${c.chip_ok ? "✔" : "✖"} ${esc(c.chip || "–")}</td><td>${esc(c.model || "–")}</td>
+    <td class="num">${num(c.impressions)}</td><td class="num">${num(c.rated_yield)}</td><td class="num">${c.raw_percent ?? "–"}%</td>
+    <td>${esc(c.installed)}</td><td>${esc(c.last_used)}</td></tr>`).join("") + "</tbody>";
+  $("events").innerHTML = "<thead><tr><th class='num'>#</th><th>Código</th><th class='num'>Na página</th><th>Significado</th></tr></thead><tbody>"
+    + d.events.map((e) => `<tr><td class="num">${e.seq}</td><td class="${e.hint.includes("cartucho") ? "state-bad" : ""}">${esc(e.code)}</td>
+      <td class="num">${esc(e.page)}</td><td class="${e.hint.includes("cartucho") ? "" : "muted"}">${esc(e.hint)}</td></tr>`).join("") + "</tbody>";
+  kv($("identity"), d.identity);
+  kv($("settings"), d.settings);
+}
+
+function render(d) {
+  if (d.loading) return;
+  for (const part of [renderHeader, renderActions, renderTanks, renderStatus, renderSupplies, renderChanges, renderCounters, renderHardware, renderDetails]) {
+    part(d);
+  }
+}
+
+function tick() {
+  if (!lastReadAt) return;
+  const age = Math.max(0, Math.round((Date.now() - lastReadAt.getTime()) / 1000));
+  $("liveText").textContent = `AO VIVO · atualizado há ${age}s`;
+}
+
+function connect() {
+  const source = new EventSource("/events");
+  source.onmessage = (event) => { $("dot").classList.remove("off"); render(JSON.parse(event.data)); tick(); };
+  source.onerror = () => { $("dot").classList.add("off"); $("liveText").textContent = "desconectado, tentando de novo…"; };
+}
+
+setInterval(tick, 1000);
+connect();
+</script>
+</body>
+</html>
