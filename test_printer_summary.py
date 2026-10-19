@@ -1,7 +1,7 @@
 import io
 import json
 import tempfile
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import threading
 from datetime import date, datetime, timedelta
 from http.server import ThreadingHTTPServer
@@ -30,6 +30,7 @@ from printer_model import (
     SEVERITY_OK,
     SEVERITY_WARNING,
     Consumable,
+    PrinterReader,
     Report,
     capacity_impressions,
     event_hint,
@@ -336,6 +337,75 @@ class FakeUsbPrinter:
 
     def bulk_read(self, endpoint, timeout_ms):
         return self.packets.pop(0) if self.packets else None
+
+
+class LedmFakePrinter(FakeUsbPrinter):
+    """Answers each LEDM GET with the document registered for that path (404 otherwise)."""
+
+    def __init__(self, documents):
+        super().__init__([])
+        self.documents = documents
+
+    def device_id(self):
+        return "MFG:Hewlett-Packard;CMD:ZJS;"
+
+    def port_status(self):
+        return PORT_OK
+
+    def link_info(self):
+        return {"speed": "high (480 Mb/s)"}
+
+    def bulk_write(self, endpoint, payload):
+        path = payload.split(b" ")[1].decode()
+        body = self.documents.get(path)
+        if body is None:
+            self.packets = [b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"]
+        else:
+            data = body.encode()
+            self.packets = [
+                b"HTTP/1.1 200 OK\r\nServer: Mrvl-R1_0\r\nContent-Length: "
+                + str(len(data)).encode()
+                + b"\r\n\r\n"
+                + data
+            ]
+
+
+STATUS = f"""<psdyn:ProductStatusDyn xmlns:psdyn="urn:s" {NS}>
+<dd:Version><dd:Revision>SVN.29</dd:Revision></dd:Version>
+<psdyn:Status><pscat:StatusCategory xmlns:pscat="urn:p">missingMemory</pscat:StatusCategory></psdyn:Status>
+<psdyn:AlertTable><psdyn:Alert><ad:ProductStatusAlertID xmlns:ad="urn:a">missingMemory</ad:ProductStatusAlertID>
+<ad:Severity xmlns:ad="urn:a">Error</ad:Severity></psdyn:Alert></psdyn:AlertTable>
+</psdyn:ProductStatusDyn>"""
+
+
+def test_printer_reader_builds_report_from_injected_sources_without_hardware():
+    printer = LedmFakePrinter(
+        {
+            LEDM_PATHS["status"]: STATUS,
+            LEDM_PATHS["consumables"]: CONFIG,
+            LEDM_PATHS["usage"]: USAGE,
+        }
+    )
+    reader = PrinterReader(
+        connect=lambda: nullcontext(printer),
+        topology=lambda: {"port": 4},
+        queue_state=lambda: "printer x is idle.",
+        clock=lambda: datetime(2026, 10, 18, 12, 0),
+    )
+    report = reader.read()
+    assert report.status_category == "missingMemory"
+    assert report.alerts == [("Error", "missingMemory", "")]
+    assert {c.color: c.percent for c in report.consumables} == {
+        "Cyan": None,
+        "Magenta": 15,
+    }
+    assert report.topology == {"port": 4} and report.queue == "printer x is idle."
+    assert (
+        report.http_server == "Mrvl-R1_0"
+        and report.revisions["ProductStatusDyn"] == "SVN.29"
+    )
+    missing = {LEDM_PATHS[k] for k in ("config", "logs", "events", "media", "print")}
+    assert {error.split(":")[0] for error in report.errors} == missing
 
 
 def test_ledm_client_drains_stale_bytes_and_reads_zero_padded_chunked_reply():

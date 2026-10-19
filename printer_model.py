@@ -453,36 +453,8 @@ def cups_queue_state():
         return " ".join(out.read().split()) or "sem resposta do lpstat"
 
 
-def fetch_roots(ledm, report):
-    roots = {}
-    for key, path in LEDM_PATHS.items():
-        expected = path.rsplit("/", 1)[-1].removesuffix(".xml")
-        started = time.monotonic()
-        try:
-            response = ledm.fetch(path)
-            roots[key] = parse(response.body, expected)
-            report.wire_bytes[path] = response.wire_bytes
-            report.http_server = response.server or report.http_server
-            report.revisions[expected] = text(roots[key], "Version/Revision")
-        except (hpstatus.UsbError, ValueError, ET.ParseError) as error:
-            report.errors.append(f"{path}: {error}")
-        report.latency_ms[path] = round((time.monotonic() - started) * 1000)
-    return roots
-
-
-def collect():
-    with hpstatus.UsbPrinter.open() as usb:
-        report = Report(
-            device_id=usb.device_id(),
-            port=usb.port_status(),
-            queue=cups_queue_state(),
-            read_at=datetime.now(),
-            usb=usb.link_info(),
-            endpoints=usb.endpoint_map(),
-            topology=macos_usb.usb_topology(),
-        )
-        roots = fetch_roots(hpstatus.LedmClient(usb), report)
-
+def apply_roots(report, roots):
+    """Fill a Report from the parsed LEDM documents that could be read."""
     if "config" in roots:
         report.identity = read_identity(roots["config"])
         report.settings = read_settings(
@@ -508,4 +480,56 @@ def collect():
         report.events = read_events(roots["logs"])
     if "events" in roots:
         report.device_events = read_device_events(roots["events"])
-    return report
+
+
+class PrinterReader:
+    """One full reading of the printer. Every I/O source is injected so tests need no hardware."""
+
+    def __init__(
+        self,
+        connect=hpstatus.UsbPrinter.open,
+        topology=macos_usb.usb_topology,
+        queue_state=cups_queue_state,
+        clock=datetime.now,
+    ):
+        self._connect = connect
+        self._topology = topology
+        self._queue_state = queue_state
+        self._clock = clock
+
+    def read(self):
+        with self._connect() as usb:
+            report = Report(
+                device_id=usb.device_id(),
+                port=usb.port_status(),
+                queue=self._queue_state(),
+                read_at=self._clock(),
+                usb=usb.link_info(),
+                endpoints=usb.endpoint_map(),
+                topology=self._topology(),
+            )
+            roots = self._fetch_roots(hpstatus.LedmClient(usb), report)
+        apply_roots(report, roots)
+        return report
+
+    @staticmethod
+    def _fetch_roots(ledm, report):
+        roots = {}
+        for key, path in LEDM_PATHS.items():
+            expected = path.rsplit("/", 1)[-1].removesuffix(".xml")
+            started = time.monotonic()
+            try:
+                response = ledm.fetch(path)
+                roots[key] = parse(response.body, expected)
+                report.wire_bytes[path] = response.wire_bytes
+                report.http_server = response.server or report.http_server
+                report.revisions[expected] = text(roots[key], "Version/Revision")
+            except (hpstatus.UsbError, ValueError, ET.ParseError) as error:
+                report.errors.append(f"{path}: {error}")
+            report.latency_ms[path] = round((time.monotonic() - started) * 1000)
+        return roots
+
+
+def collect():
+    # ponytail: shim for the two loop callers; removed when they move to Poller.
+    return PrinterReader().read()
