@@ -12,6 +12,10 @@ The CP1025 is a host-based printer (ZJS). On macOS 14 the last HP driver Apple s
 
 See [docs/FINDINGS.md](docs/FINDINGS.md) for everything that was found along the way.
 
+## Status
+
+Monitoring works (terminal and web, about 250 ms per full reading). Printing on the author's unit is still blocked by two cartridges: the black chip is unreadable and the yellow chip is rejected. The ordered next steps, and what is still unverified, are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
+
 ## Requirements
 
 - macOS (tested on 14.6.1, Intel). The USB topology panel uses `ioreg`; everything else is plain libusb.

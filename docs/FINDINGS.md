@@ -2,31 +2,44 @@
 
 Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), October 2026. Numbers are what was measured on this unit; dates are when they were measured.
 
-## Status (2026-10-18)
+## Status (last checked 2026-10-18 23:52)
 
 | Area | State |
 |---|---|
 | USB link | works: USB 2.0 high speed, behind a USB 2.0 hub (`1a40:0101`) |
-| Status reading (LEDM) | works: full reading in about 270 ms |
-| Terminal and web dashboards | done, tested (37 tests, all passing, no printer needed) |
+| Status reading (LEDM) | works: 255 ms median over 5 back-to-back reads at the last check; 200 to 500 ms over the day depending on Mac load |
+| Terminal and web dashboards | done and refactored; 37 tests, all passing, no printer needed |
 | Printing | **blocked by cartridges**, not by software |
-| CUPS queue | exists (`HP_LaserJet_CP1025`) but still points at the HP driver, which produces blank pages |
+| CUPS queue | `HP_LaserJet_CP1025` is enabled and idle again (since 22:43), but still uses the HP driver PPD, which produces blank pages |
 
 ## What blocks printing
 
-The printer reports cartridge errors and refuses print data until they clear. Seen over the session:
+The printer reports cartridge errors and refuses print data until they clear. Last reading (status `cartridgeMissing`, two `Error` alerts):
 
 | Cartridge | Code | Last state read | Level |
 |---|---|---|---|
-| Black | CE310A | `cartridgeMissing` (earlier `misinstalled` / `incorrectCartridge`). Chip reads `0000/0000`, no brand. | unknown |
-| Cyan | CE311A | ok (earlier `missingMemory`, cleared after reseating) | 50% |
-| Magenta | CE313A | ok, genuine HP | 40% |
-| Yellow | CE312A | `missingMemory` (comes and goes with reseating) | unknown |
-| Drum (OPC) | CE314A | ok | 100% |
+| Black | CE310A | `missing` (earlier `misinstalled` / `incorrectCartridge`). Chip reads `0000/0000`, no brand. | unknown |
+| Cyan | CE311A | ok (earlier `missingMemory`, cleared after reseating) | 50%, about 400 pages |
+| Magenta | CE313A | ok, genuine HP | 40%, about 300 pages |
+| Yellow | CE312A | `missingMemory` (came and went with reseating). Chip tag is readable (`DC7C/CF07`) but the printer rejects it. | unknown |
+| Drum (OPC) | CE314A | ok | 100%, about 7,500 pages |
 
 The cartridges were made in 2013, the drum in 2010. Last use before this session: 2023-01-16. The previous black cartridge printed 594 pages (installed 2020-11-18).
 
 While a cartridge is in an error state with action `stop`, the print channel (interface 0) stops accepting data: CUPS reports `Unable to send data to printer` and the USB write returns `e00002ed`. PJL `INFO` queries on the same channel time out (`LIBUSB_ERROR_TIMEOUT`). The LEDM channel keeps answering.
+
+### Reseating session, as recorded in history.jsonl
+
+The history file kept every reading that changed, which captured one reseating attempt:
+
+| Time | Status | Supplies not ok |
+|---|---|---|
+| 21:39 | `incorrectCartridge` | black `misinstalled` |
+| 22:45 to 22:52 | alternates `closeDoorOrCover` and `initializing` 7 times | all five `unknown` while the door is open |
+| 22:53:26 | `initializing` | black `missing`, yellow `missingMemory` |
+| 22:53:30 | `cartridgeMissing` | same, unchanged since |
+
+So: with the front door open every supply reads `unknown`; after closing, the printer spends a few seconds in `initializing`; and after this reseat black went from `misinstalled` to `missing`, with its chip still unreadable.
 
 ## Drivers
 
@@ -88,8 +101,10 @@ macOS IORegistry reports `Bus Power Available` in 2 mA units (250 = the 500 mA t
 
 | Code | Meaning | Confidence |
 |---|---|---|
-| `10.1000` .. `10.1003` | supply memory / communication error; last digit 0 black, 1 cyan, 2 magenta, 3 yellow | likely: HP forum post for another model and an HP support document; not CP1025 documentation |
+| `10.1000` .. `10.1003` | supply memory / communication error; last digit 0 black, 1 cyan, 2 magenta, 3 yellow | likely: HP forum post for another model and an HP support document; not CP1025 documentation. Consistent with this unit: the log holds `10.1001` and `10.1003`, and cyan and yellow are the two cartridges that reported `missingMemory` |
 | `99.100A`, `99.1006`, `99.0B00` | unknown | none found |
+
+The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,302 to 1,315, so it cannot tell when the black chip first failed.
 
 ## Done
 
@@ -99,12 +114,26 @@ macOS IORegistry reports `Bus Power Available` in 2 mA units (250 = the 500 mA t
 4. Built foo2zjs, found the Ghostscript 600 dpi banding bug and its workaround, produced valid four-plane ZJS.
 5. Found the real blocker: cartridge chip errors, read directly from the printer over LEDM.
 6. Wrote the libusb/LEDM reader, the terminal dashboard (`--full`, `--live`, `--watch`, `--json`), the history and forecast, and the local real-time web dashboard.
-7. Refactored into transport objects (`UsbPrinter`, `LedmClient`), an injectable `PrinterReader`, one shared `Poller`, a rendering-free `viewmodel`, and a `Severity` enum. Terminal output stayed byte-identical and the web page unchanged; the whole read path is now tested without hardware.
+7. Published the code as a public repo with screenshots that mask every device and cartridge serial (checked across the whole git history before the first push).
+8. Refactored into transport objects (`UsbPrinter`, `LedmClient`), an injectable `PrinterReader`, one shared `Poller`, a rendering-free `viewmodel`, and a `Severity` enum. Terminal output stayed byte-identical to the pre-refactor version (80 and 120 columns, normal, `--full`, `--live`), the web page looked the same, and the whole read path is now tested without hardware.
 
-## Still open
+## Still open, in order
 
-1. **Black cartridge (CE310A)**: reports missing / misinstalled with an unreadable chip. Reseat; if it persists, replace with a CE310A that has a working chip.
-2. **Yellow cartridge (CE312A)**: chip read fails intermittently. Clean the contacts and reseat; replace if it keeps failing.
-3. **Print queue**: once the printer reports ready, replace the HP driver queue with a foo2zjs-based one (wrapper or CUPS filter using the pipeline above, including `-dMaxBitmap`), then print a test page and confirm it on paper.
-4. **Optional cleanup**: remove the unusable HP driver package (`/Library/Printers/hp/laserjet/cp1020series`, the PPDs under `/Library/Printers/PPDs/Contents/Resources/HP LaserJet CP*`).
-5. **Not verified yet**: the change feed with a real change (only tested with simulated readings), the run-out forecast (needs a day of real printing), the meaning of the `99.xxxx` codes, and the role of the interrupt endpoint `0x83` (inferred from the class and the event capabilities, not captured).
+1. **Black cartridge (CE310A)**: reports `missing` with an unreadable chip (`0000/0000`, no brand) after a reseat. Most likely needs replacing with a CE310A whose chip works.
+2. **Yellow cartridge (CE312A)**: chip read fails on and off. Clean the gold contacts and reseat; replace if it keeps failing.
+3. **Confirm ready**: run `python3 printer_summary.py` until the verdict is `✔ PRONTA` (exit code 0).
+4. **Print queue**: replace the HP driver PPD on `HP_LaserJet_CP1025` with a foo2zjs-based setup (wrapper or CUPS filter using the pipeline above, including `-dMaxBitmap`). foo2zjs has to be rebuilt; the earlier build lived in a temporary folder. Then print a test page and confirm it on paper.
+5. **Optional cleanup**: remove the unusable HP driver (`/Library/Printers/hp/laserjet/cp1020series` and the `HP LaserJet CP*` PPDs under `/Library/Printers/PPDs/Contents/Resources/`).
+
+## Not verified yet
+
+- The live change-feed panel with a real change. The diff logic is tested with simulated readings, and history.jsonl did record the real reseating transitions above, but nobody watched the panel while it happened.
+- The run-out forecast: it needs at least a day of real printing in the history.
+- The meaning of the `99.xxxx` event codes.
+- The role of interrupt endpoint `0x83`: inferred from its interface class and the event capabilities, never captured.
+- That "Mrvl" in the server header means a Marvell controller: inferred from the name only.
+
+## Maintenance notes
+
+- Screenshots in `docs/screenshots` mask the printer serial, UUID, USB serial and cartridge serials. To refresh them, wrap `PrinterReader.read()` so it blanks those fields before rendering, and check the result with `git grep` for the real values before committing.
+- `history.jsonl` is local data and gitignored. Deleting it resets the trend lines and the forecast.
