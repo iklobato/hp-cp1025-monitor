@@ -2,7 +2,7 @@
 
 Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), October 2026. Numbers are what was measured on this unit; dates are when they were measured.
 
-## Status (last checked 2026-10-22 16:02)
+## Status (last checked 2026-10-22 17:05)
 
 | Area | State |
 |---|---|
@@ -11,7 +11,7 @@ Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), Octob
 | Terminal and web dashboards | done and refactored; 37 tests, all passing, no printer needed |
 | Printing | **works from the Mac** since 2026-10-22 16:01 through the new foo2zjs driver in [../driver/macos/README.md](../driver/macos/README.md); one A4 black-and-white page confirmed on paper. Color not yet printed on paper. |
 | CUPS queue on the Mac | `HP_CP1025` ("HP CP1025"), system default, black and white by default. The old `HP_LaserJet_CP1025` queue was deleted and the HP CP102x driver files moved to `/Library/Printers/hp-cp1020-backup-20261022/` |
-| Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,317 after the first successful job |
+| Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,317 after the first successful job; at 17:05 the printer sat idle in `inPowerSave` with that alert, no jobs queued |
 | Direction | printing moves to a network print server on a Raspberry Pi 3 that reuses the same driver chain: decided, not started. Plan in [raspberry/README.md](raspberry/README.md) |
 
 ## Cartridge history (printing no longer blocked)
