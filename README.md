@@ -14,9 +14,9 @@ See [docs/FINDINGS.md](docs/FINDINGS.md) for everything that was found along the
 
 ## Status
 
-Monitoring works (terminal and web, about 250 ms per full reading). Printing on the author's unit is still blocked by two cartridges: the black chip is unreadable and the yellow chip is rejected. The ordered next steps, and what is still unverified, are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
+Monitoring works (terminal and web, about 250 ms per full reading). **Printing works from macOS 14** since 2026-10-22 with the foo2zjs-based driver in [driver/macos/](driver/macos/README.md), which replaces HP's broken one; a black-and-white page is confirmed on paper, color is not yet.
 
-Next, the printer moves off the Mac to a network print server on a Raspberry Pi 3 (CUPS + foo2zjs, shared as AirPrint, Tailscale for remote use). All decisions are taken, nothing is built yet: [docs/raspberry/README.md](docs/raspberry/README.md).
+Next, the printer moves off the Mac to a network print server on a Raspberry Pi 3 that reuses the same driver chain (CUPS + foo2zjs, shared as AirPrint, Tailscale for remote use): [docs/raspberry/README.md](docs/raspberry/README.md). The ordered next steps and what is still unverified are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
 
 ## Requirements
 
@@ -110,4 +110,4 @@ python3 hpstatus.py /DevMgmt/ConsumableConfigDyn.xml
 - Only the CP1025 (USB `03f0:112a`) was tested. Other LEDM printers over USB may work with a different `PRODUCT_ID`.
 - Event codes `10.100X` are labelled as a likely cartridge chip error from HP forum and support material for other models, not from CP1025 documentation. The `99.xxxx` codes in the log have no known meaning yet.
 - The run-out forecast needs real usage history; it stays empty until the printer has printed over at least a day.
-- Printing itself is not part of this repo. See [docs/FINDINGS.md](docs/FINDINGS.md) for the working foo2zjs pipeline.
+- Printing on macOS: [driver/macos/README.md](driver/macos/README.md).

@@ -2,20 +2,21 @@
 
 Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), October 2026. Numbers are what was measured on this unit; dates are when they were measured.
 
-## Status (last checked 2026-10-21 21:56)
+## Status (last checked 2026-10-22 16:02)
 
 | Area | State |
 |---|---|
 | USB link | works: USB 2.0 high speed, behind a USB 2.0 hub (`1a40:0101`) |
 | Status reading (LEDM) | works: 254 ms median over 5 back-to-back reads at the last check; 200 to 500 ms over the day depending on Mac load |
 | Terminal and web dashboards | done and refactored; 37 tests, all passing, no printer needed |
-| Printing | **blocked by cartridges**, not by software |
-| CUPS queue on the Mac | `HP_LaserJet_CP1025` is enabled and idle (since 2026-10-18 22:43), still on the HP driver PPD that produces blank pages; to be deleted (step 0 of the Pi plan) |
-| Direction | printing moves to a network print server on a Raspberry Pi 3: decided, not started. Plan and decisions in [raspberry/README.md](raspberry/README.md) |
+| Printing | **works from the Mac** since 2026-10-22 16:01 through the new foo2zjs driver in [../driver/macos/README.md](../driver/macos/README.md); one A4 black-and-white page confirmed on paper. Color not yet printed on paper. |
+| CUPS queue on the Mac | `HP_CP1025` ("HP CP1025"), system default, black and white by default. The old `HP_LaserJet_CP1025` queue was deleted and the HP CP102x driver files moved to `/Library/Printers/hp-cp1020-backup-20261022/` |
+| Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,317 after the first successful job |
+| Direction | printing moves to a network print server on a Raspberry Pi 3 that reuses the same driver chain: decided, not started. Plan in [raspberry/README.md](raspberry/README.md) |
 
-## What blocks printing
+## Cartridge history (printing no longer blocked)
 
-The printer reports cartridge errors and refuses print data until they clear. Last reading (status `cartridgeMissing`, two `Error` alerts):
+Until 2026-10-21 the printer reported cartridge errors and every test page was refused. Reading of 2026-10-18 (status `cartridgeMissing`, two `Error` alerts):
 
 | Cartridge | Code | Last state read | Level |
 |---|---|---|---|
@@ -42,7 +43,9 @@ How printing was tested: a valid four-plane ZJS page sent raw to the CUPS queue,
 | 21:50 | paper reseated: only `incompatibleConsumable` left, status `processing` | 0 |
 | 21:56 | after a power cycle: still only `incompatibleConsumable` | 0 |
 
-So once the paper alert cleared, the incompatible-cartridge alert alone was enough to keep the printer from accepting any data, and a power cycle did not clear it. Not verified: why the chips are rejected (region lock or a chip the firmware does not know); whether a different brand of compatible cartridge would pass.
+That evening the conclusion was that the incompatible-cartridge alert alone blocked printing. **That conclusion was wrong.** On 2026-10-22 the same alert was still active (`incompatibleConsumable`, Error, black and yellow) and the printer accepted and printed a full page through the new driver (job 22, 71,095 bytes, 16:01).
+
+What was different on 10-21 is not proven. The readings at 21:50 and 21:56 showed status `processing`, while on 10-22 it was not; a likely explanation is that the printer was still holding a stuck earlier job, but nothing measured it. Practical rule: `incompatibleConsumable` alone does not stop this printer from printing; if pages are refused, read the status category first.
 
 ### Reseating session, as recorded in history.jsonl
 
@@ -83,7 +86,19 @@ gs -q -dBATCH -dSAFER -dNOPAUSE -dMaxBitmap=2000000000 -g4960x7016 -r600x600 \
 lp -d <queue> -o raw page.zjs
 ```
 
-The resulting ZJS had data in all four color planes (verified with `zjsdecode`). It was sent to the printer but not printed, because of the cartridge errors above.
+The resulting ZJS had data in all four color planes (verified with `zjsdecode`). On 10-21 the printer refused it (see the cartridge history above).
+
+This pipeline works from a shell but **not inside a macOS CUPS queue**: the CUPS sandbox does not let filters reach Homebrew's Ghostscript. The driver that works on macOS does not use Ghostscript at all.
+
+### foo2zjs driver for macOS (works, 2026-10-22)
+
+Apple's `cgpdftoraster` draws the page as CUPS raster (1-bit black or 8-bit CMYK), a small C program `rastertopksm` turns it into the four 1-bit planes foo2zjs reads, and foo2zjs encodes ZJS. Full description, install steps and checks: [../driver/macos/README.md](../driver/macos/README.md).
+
+Things learned building it:
+- The macOS CUPS sandbox blocks filters from `/usr/local` (Homebrew) and from opening `/dev/stdin` by path (`Operation not permitted`). Neither shows as a sandbox "deny" line that was found in the system log.
+- `cgpdftoraster` only produces 1-bit K (`cupsColorSpace 3`) or 8-bit **chunky** color; it rejects 1-bit CMYK and every planar order.
+- Its raster covers only the PPD's imageable area (A4: 4766 x 6825 dots with 11.52 pt margins), so it has to be centred on the full 4960 x 7016 page before foo2zjs clips 96 dots off each edge.
+- The first page printed on paper was an A4 black-and-white document from Brave's Print dialog.
 
 ## Low-level protocol notes
 
@@ -128,29 +143,31 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 2. Ruled out driverless URF over USB.
 3. Installed the Apple HP driver (patched version check) and proved its filter emits blank pages on macOS 14.
 4. Built foo2zjs, found the Ghostscript 600 dpi banding bug and its workaround, produced valid four-plane ZJS.
-5. Found the real blocker: cartridge chip errors, read directly from the printer over LEDM.
+5. Read cartridge chip errors directly from the printer over LEDM (later shown not to be what blocked printing, see the cartridge history).
 6. Wrote the libusb/LEDM reader, the terminal dashboard (`--full`, `--live`, `--watch`, `--json`), the history and forecast, and the local real-time web dashboard.
 7. Published the code as a public repo with screenshots that mask every device and cartridge serial (checked across the whole git history before the first push).
 8. Refactored into transport objects (`UsbPrinter`, `LedmClient`), an injectable `PrinterReader`, one shared `Poller`, a rendering-free `viewmodel`, and a `Severity` enum. Terminal output stayed byte-identical to the pre-refactor version (80 and 120 columns, normal, `--full`, `--live`), the web page looked the same, and the whole read path is now tested without hardware.
 9. Planned the move to a network print server on a Raspberry Pi 3 and took every decision with the owner (2026-10-19): hardware, OS, Tailscale for remote printing, monochrome default, access rules, automatic security updates, a rebuildable `setup.sh`. Found while planning: Bonjour does not cross Tailscale, so iPhone and iPad can only print at home. See [raspberry/README.md](raspberry/README.md).
+10. **Printing works**: wrote a macOS CUPS driver around foo2zjs (`cgpdftoraster` + `rastertopksm` + foo2zjs), replaced the HP queue with `HP_CP1025`, and printed a page on paper (2026-10-22). See [../driver/macos/README.md](../driver/macos/README.md).
 
 ## Still open, in order
 
-1. **Black and yellow cartridges**: the non-HP ones fitted on 2026-10-21 are rejected (`incompatibleConsumable`) and block printing, even after a power cycle. Replace them with genuine HP 126A (CE310A black, CE312A yellow), or with compatibles known to work in a CP1025.
-2. **Network print server on a Raspberry Pi 3**: every decision is taken and written down in [raspberry/README.md](raspberry/README.md). Steps 0 to 4 do not depend on the cartridges and can start any time:
-   - step 0, clean the Mac: delete the USB queue `HP_LaserJet_CP1025` and the HP 5.1.1 driver;
+1. **Print a color page on paper** from the Mac, to confirm the CMYK path and the dither (only checked by decoding the ZJS so far).
+2. **Network print server on a Raspberry Pi 3**: plan and decisions in [raspberry/README.md](raspberry/README.md), now reusing the driver chain proven on the Mac:
+   - step 0 is done on the Mac (old queue deleted, HP driver files moved to a backup folder);
    - step 1, flash Pi OS Lite 64-bit (by hand);
-   - step 2, `setup.sh` with CUPS, foo2zjs, Avahi, Tailscale and a trimmed system;
-   - step 3, measure Ghostscript on the Pi (blank-page bug, time and memory per page);
-   - step 4, add the clients.
-3. **Validate on paper** (step 5 of the plan) once item 1 is done: Mac, iPhone and Android at home, Mac through Tailscale, recovery after reboot and power-cycle.
-
-This replaces the earlier idea of a foo2zjs queue on the Mac itself: with the Pi, no computer needs a driver.
+   - step 2, `setup.sh` with CUPS, cups-filters, foo2zjs, `rastertopksm`, Avahi, Tailscale and a trimmed system;
+   - step 3, measure time and memory per page on the Pi;
+   - step 4, add the clients;
+   - step 5, validate on paper from Mac, iPhone and Android.
+3. **Optional**: genuine HP 126A black and yellow. Not needed to print, but the printer keeps an `incompatibleConsumable` error and cannot report their level.
 
 ## Not verified yet
 
 For the Raspberry plan's own open questions (PPD name, firmware, Ghostscript on the Pi, time per page) see [raspberry/README.md](raspberry/README.md#not-verified-yet). For the printer and the monitor:
 
+- Why the printer refused every page on 2026-10-21 and accepted them on 2026-10-22 with the same cartridge alert.
+- Color printing on paper, and the color quality of the plain Bayer dither.
 - The live change-feed panel with a real change. The diff logic is tested with simulated readings, and history.jsonl did record the real reseating transitions above, but nobody watched the panel while it happened.
 - The run-out forecast: it needs at least a day of real printing in the history.
 - The meaning of the `99.xxxx` event codes.
