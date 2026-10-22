@@ -14,9 +14,9 @@ See [docs/FINDINGS.md](docs/FINDINGS.md) for everything that was found along the
 
 ## Status
 
-Monitoring works (terminal and web, about 250 ms per full reading). **Printing works from macOS 14** since 2026-10-22 with the foo2zjs-based driver in [driver/macos/](driver/macos/README.md), which replaces HP's broken one; a black-and-white page is confirmed on paper, color is not yet.
+Monitoring works (terminal and web, about 250 ms per full reading) while the printer is on the Mac's USB. **Printing works from macOS 14** since 2026-10-22 with the foo2zjs-based driver in [driver/macos/](driver/macos/README.md), which replaces HP's broken one; a black-and-white page is confirmed on paper, color is not yet.
 
-Next, the printer moves off the Mac to a network print server on a Raspberry Pi 3 that reuses the same driver chain (CUPS + foo2zjs, shared as AirPrint, Tailscale for remote use): [docs/raspberry/README.md](docs/raspberry/README.md). The ordered next steps and what is still unverified are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
+Since the evening of 2026-10-22 the printer sits on a **Raspberry Pi 3 network print server** that reuses the same driver chain (CUPS + foo2zjs, shared as AirPrint). It prints from the network, about 13 s per page; Tailscale, hardening and a rebuild script are still to do: [docs/raspberry/README.md](docs/raspberry/README.md). The ordered next steps and what is still unverified are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
 
 ## Requirements
 

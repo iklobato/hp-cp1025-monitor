@@ -2,17 +2,17 @@
 
 Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), October 2026. Numbers are what was measured on this unit; dates are when they were measured.
 
-## Status (last checked 2026-10-22 17:05)
+## Status (last checked 2026-10-22 19:59)
 
 | Area | State |
 |---|---|
-| USB link | works: USB 2.0 high speed, behind a USB 2.0 hub (`1a40:0101`) |
-| Status reading (LEDM) | works: 254 ms median over 5 back-to-back reads at the last check; 200 to 500 ms over the day depending on Mac load |
+| Where the printer is | **on the Raspberry Pi 3's USB** since about 19:20 on 2026-10-22, no longer on the Mac |
+| Printing | **works over the network** through the Pi (CUPS + the same foo2zjs driver chain, rebuilt on Linux): 9 pages printed from the Pi, an Android phone and a second network client, about 13 s per one-page job. Before that it worked from the Mac over USB (first page 16:01). Color not yet printed on paper. Details: [raspberry/README.md](raspberry/README.md) |
+| Network queue | `HP_CP1025` on `impressora-pi.local`, shared as AirPrint ("HP CP1025 @ impressora-pi"), A4, black and white by default; status page `http://impressora-pi.local:631/jobs?which_jobs=all` |
+| CUPS queue on the Mac | `HP_CP1025` (USB) still exists but no longer reaches the printer; to be replaced by the network printer. The HP CP102x driver files stay in `/Library/Printers/hp-cp1020-backup-20261022/` |
+| Status reading (LEDM) | works from the Mac (about 250 ms per reading) and, by hand, from the Pi. The dashboards in this repo still need the printer on the Mac's USB |
 | Terminal and web dashboards | done and refactored; 37 tests, all passing, no printer needed |
-| Printing | **works from the Mac** since 2026-10-22 16:01 through the new foo2zjs driver in [../driver/macos/README.md](../driver/macos/README.md); one A4 black-and-white page confirmed on paper. Color not yet printed on paper. |
-| CUPS queue on the Mac | `HP_CP1025` ("HP CP1025"), system default, black and white by default. The old `HP_LaserJet_CP1025` queue was deleted and the HP CP102x driver files moved to `/Library/Printers/hp-cp1020-backup-20261022/` |
-| Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,317 after the first successful job; at 17:05 the printer sat idle in `inPowerSave` with that alert, no jobs queued |
-| Direction | printing moves to a network print server on a Raspberry Pi 3 that reuses the same driver chain: decided, not started. Plan in [raspberry/README.md](raspberry/README.md) |
+| Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,326 at 19:59, status idle with only that alert |
 
 ## Cartridge history (printing no longer blocked)
 
@@ -149,25 +149,24 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 8. Refactored into transport objects (`UsbPrinter`, `LedmClient`), an injectable `PrinterReader`, one shared `Poller`, a rendering-free `viewmodel`, and a `Severity` enum. Terminal output stayed byte-identical to the pre-refactor version (80 and 120 columns, normal, `--full`, `--live`), the web page looked the same, and the whole read path is now tested without hardware.
 9. Planned the move to a network print server on a Raspberry Pi 3 and took every decision with the owner (2026-10-19): hardware, OS, Tailscale for remote printing, monochrome default, access rules, automatic security updates, a rebuildable `setup.sh`. Found while planning: Bonjour does not cross Tailscale, so iPhone and iPad can only print at home. See [raspberry/README.md](raspberry/README.md).
 10. **Printing works**: wrote a macOS CUPS driver around foo2zjs (`cgpdftoraster` + `rastertopksm` + foo2zjs), replaced the HP queue with `HP_CP1025`, and printed a page on paper (2026-10-22). See [../driver/macos/README.md](../driver/macos/README.md).
+11. **Network printing works** (2026-10-22 evening): flashed Pi OS Lite 64-bit Trixie on a Raspberry Pi 3, rebuilt the same driver chain there (`gstoraster` from cups-filters replaces Apple's rasterizer; the filter, `rastertopksm` and foo2zjs are unchanged), shared the queue as AirPrint, and printed 9 pages from the Pi and from phones. Found and fixed a 50 s wait per job (colord could not start until D-Bus reloaded its policy). Measured 13 s per one-page job and 305 MB peak memory. See [raspberry/README.md](raspberry/README.md).
 
 ## Still open, in order
 
-1. **Print a color page on paper** from the Mac, to confirm the CMYK path and the dither (only checked by decoding the ZJS so far).
-2. **Network print server on a Raspberry Pi 3**: plan and decisions in [raspberry/README.md](raspberry/README.md), now reusing the driver chain proven on the Mac:
-   - step 0 is done on the Mac (old queue deleted, HP driver files moved to a backup folder);
-   - step 1, flash Pi OS Lite 64-bit (by hand);
-   - step 2, `setup.sh` with CUPS, cups-filters, foo2zjs, `rastertopksm`, Avahi, Tailscale and a trimmed system;
-   - step 3, measure time and memory per page on the Pi;
-   - step 4, add the clients;
-   - step 5, validate on paper from Mac, iPhone and Android.
-3. **Optional**: genuine HP 126A black and yellow. Not needed to print, but the printer keeps an `incompatibleConsumable` error and cannot report their level.
+1. **Phone jobs**: the Android phone sends US Letter and its color request comes out black and white. Offer A4 only on the Pi and make `print-color-mode=color` select the CMYK mode.
+2. **Print a color page on paper** (from the Pi), to confirm the CMYK path and the dither (only checked by decoding the ZJS so far).
+3. **Move the Mac to the network printer**: delete the Mac's USB queue `HP_CP1025` and add "HP CP1025 @ impressora-pi".
+4. **Finish the Pi** ([raspberry/README.md](raspberry/README.md)): trim services, security updates, Tailscale (owner logs in once), print access limited to LAN and tailnet, admin over HTTPS, reserve its IP in the router, write `setup.sh` from the commands that were run, then reboot and power-cycle tests and a check from the iPhone.
+5. **Small code fix**: `rastertopksm.c` should compare with libcups' `CUPS_CSPACE_K` / `CUPS_CSPACE_CMYK`; GCC on the Pi warns (`-Wenum-compare`), clang on the Mac does not.
+6. **Optional**: bring the status dashboard to the Pi (the LEDM reader works there; `PORT_STATUS` fails because `usblp` owns interface 0, and `macos_usb.py` is macOS only).
+7. **Optional**: genuine HP 126A black and yellow. Not needed to print, but the printer keeps an `incompatibleConsumable` error and cannot report their level.
 
 ## Not verified yet
 
-For the Raspberry plan's own open questions (PPD name, firmware, Ghostscript on the Pi, time per page) see [raspberry/README.md](raspberry/README.md#not-verified-yet). For the printer and the monitor:
+For the Pi's own open questions (reboot, color on paper, iPhone, Tailscale) see [raspberry/README.md](raspberry/README.md#not-verified-yet). For the printer and the monitor:
 
 - Why the printer refused every page on 2026-10-21 and accepted them on 2026-10-22 with the same cartridge alert.
-- Color printing on paper, and the color quality of the plain Bayer dither.
+- Color printing on paper, and the color quality of the plain Bayer dither (Mac) and of `gstoraster`'s output (Pi).
 - The live change-feed panel with a real change. The diff logic is tested with simulated readings, and history.jsonl did record the real reseating transitions above, but nobody watched the panel while it happened.
 - The run-out forecast: it needs at least a day of real printing in the history.
 - The meaning of the `99.xxxx` event codes.

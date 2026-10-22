@@ -1,4 +1,4 @@
-# Network print server on a Raspberry Pi (plan, not started)
+# Network print server on a Raspberry Pi (printing works, hardening not done)
 
 Goal: every computer and phone prints to the CP1025 over the network instead of plugging into its USB cable. The printer moves to a Raspberry Pi, which runs CUPS with the foo2zjs driver and advertises the printer as AirPrint / IPP Everywhere. Clients need no driver: they send PDF, the Pi converts it to ZJS.
 
@@ -8,14 +8,24 @@ Mac / iPhone / Android / Linux  --AirPrint/IPP-->  Raspberry Pi 3 (CUPS + foo2zj
 
 Scope is network printing only. The status monitor in this repo is not part of the Pi setup.
 
-Status on 2026-10-22: all decisions taken, step 0 done, nothing built on the Pi yet. Printing works from the Mac over USB with the driver in [../../driver/macos/README.md](../../driver/macos/README.md) (one page on paper, 2026-10-22 16:01); the Pi reuses that same driver chain.
+## Status (last checked 2026-10-22 19:59)
+
+| Area | State |
+|---|---|
+| Pi | Raspberry Pi 3 Model B Rev 1.2, wired, `impressora-pi.local` (`192.168.1.177` from DHCP, not reserved yet) |
+| OS | Raspberry Pi OS Lite 64-bit **Trixie** (Debian 13), image 2026-10-06, kernel 6.18.50 |
+| Login | `ssh impressora` from the Mac (key `~/.ssh/impressora`, user `iklo`); SSH password login is off; `sudo` without password |
+| Printing | **works over the network.** Queue `HP_CP1025` on the Pi's USB, shared, shown as "HP CP1025 @ impressora-pi" in AirPrint. 9 pages printed by 19:59 (jobs 1 to 7, from the Pi itself, an Android phone and a second network client); printer page counter went 1,317 to 1,326 |
+| Time per job | about 13 s from submit to done for one A4 page (job 7), after the colord fix below |
+| Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
+| Not done | trimming, security updates, Tailscale, access rules, admin over HTTPS, `setup.sh`, A4 and color for phone jobs, reboot test, moving the Mac to the network printer |
 
 ## Decisions
 
 | Topic | Choice |
 |---|---|
-| Hardware | Raspberry Pi 3 B/B+ on wired Ethernet; printer on a USB-A port (it is self-powered and draws 98 mA from the bus) |
-| OS | Raspberry Pi OS Lite 64-bit (Bookworm), trimmed to the services printing needs |
+| Hardware | Raspberry Pi 3 B on wired Ethernet; printer on a USB-A port (it is self-powered and draws 98 mA from the bus) |
+| OS | Raspberry Pi OS Lite 64-bit, Trixie (the current release on 2026-10-22; the plan said Bookworm, which is now "oldstable"), trimmed to the services printing needs |
 | Reach | home LAN, plus away from home through Tailscale |
 | Who runs it | done over SSH (Tailscale SSH once enrolled) |
 | Queue | `HP_CP1025`, shown to clients as "HP CP1025" |
@@ -24,11 +34,21 @@ Status on 2026-10-22: all decisions taken, step 0 done, nothing built on the Pi 
 | CUPS admin | web admin reachable from LAN and tailnet, login with an `lpadmin` user, HTTPS only |
 | Updates | `unattended-upgrades`, security only; automatic reboot at 04:30 when a patch needs one (a default, easy to change) |
 | Record | idempotent `docs/raspberry/setup.sh` plus this file, so a dead SD card can be rebuilt |
-| Mac USB queue | step 0 done 2026-10-22: old HP queue deleted, HP CP102x driver files moved to `/Library/Printers/hp-cp1020-backup-20261022/`. The Mac now has its own working queue `HP_CP1025`; delete it once the Pi serves the printer |
+| Mac USB queue | step 0 done 2026-10-22. The Mac still has its USB queue `HP_CP1025`, which no longer reaches the printer; delete it and add the network printer (step 4) |
 
-## Hardware sizing
+## Hardware sizing (measured 2026-10-22 on the Pi 3)
 
-The only heavy work is rasterizing each page with Ghostscript. Measured on the Mac: one A4 page at 600 dpi is a 17.4 MB raster (4 color planes of 4960 x 7016 bits). The full-page mode that rendered correctly on the Mac uses one core; the banded mode can use four but rendered blank pages with Ghostscript 10.05.1 on the Mac. A Pi 3 has 1 GB RAM and 4 cores, which is expected to be enough; time and peak memory per page on the Pi are not measured yet (step 3).
+One A4 page at 600 dpi, CUPS test page, black and white:
+
+| Stage | Time |
+|---|---|
+| `pdftopdf` | 0.2 s |
+| `gstoraster` (what CUPS picks, Ghostscript 10.05.1) | 3.4 s |
+| `pdftoraster` (alternative) | 6.9 s |
+| `rastertopksm` + `foo2zjs` | 1.0 s |
+| whole CUPS job, submit to done | 13 s |
+
+Peak memory was 305 MB for `pdftoraster` + filter (out of 905 MB). A color page through `pdftoraster` took 5.1 s with the same peak. No `zram` needed. A 3-page phone PDF took 57 s before the colord fix, most of it the colord wait; not measured again after the fix.
 
 Wired Ethernet is preferred over Wi-Fi so the printer does not drop out of Bonjour discovery when Wi-Fi power saving kicks in.
 
@@ -37,87 +57,116 @@ Wired Ethernet is preferred over Wi-Fi so the printer does not drop out of Bonjo
 ### 0. Clean the Mac (done 2026-10-22)
 1. Deleted the USB queue `HP_LaserJet_CP1025`.
 2. Moved the HP CP102x PPDs and `/Library/Printers/hp/laserjet/cp1020series` to `/Library/Printers/hp-cp1020-backup-20261022/` instead of removing the whole 581 MB HP package, which carries drivers for other HP printers.
-3. When the Pi works: `lpadmin -x HP_CP1025` on the Mac and add the network printer instead.
+3. Still to do (step 4): `lpadmin -x HP_CP1025` on the Mac and add the network printer instead.
 
-### 1. Prepare the SD card (about 20 min, by hand)
-1. Raspberry Pi Imager: Pi OS Lite 64-bit, hostname `impressora`, a user, SSH with public key only.
-2. Plug the Pi into the router by cable and reserve its IP in the router's DHCP.
-3. Check `ssh <user>@impressora.local` answers.
+### 1. Prepare the SD card (done 2026-10-22)
+1. Raspberry Pi Imager 2.0.12 (`brew install --cask raspberry-pi-imager`): device Raspberry Pi 3, OS Raspberry Pi OS Lite (64-bit), hostname `impressora-pi`, user `iklo`, time zone `America/Sao_Paulo`, keyboard `br`, no Wi-Fi, SSH with public key only (`~/.ssh/impressora.pub`, a key made for this Pi), telemetry off.
+2. The first SD card was dead: the USB reader (Genesys `05e3:0751`) enumerated but reported no medium (`IOBlockStorageDriver` with no `IOMedia` under it), while another card worked in the same reader. The card used is a 32 GB one that held an old Recalbox install (2018), wiped with the owner's OK.
+3. The Pi took about 1 minute to get an address and 25 s more to open SSH on the first boot. `impressora-pi.local` answers through mDNS.
+4. Mac side: `Host impressora` added to `~/.ssh/config` (backup of the old file in `~/.ssh/config.bak-20261022`).
+5. Still to do: reserve `192.168.1.177` for the Pi in the router's DHCP.
 
-### 2. `setup.sh` (about 1 h)
-Each block is safe to run again.
-1. Trim: `dtoverlay=disable-bt`, `hciuart` off, `dtoverlay=disable-wifi`, `gpu_mem=16`, `cups-browsed` off, `usbcore.autosuspend=-1`, and every other enabled service reviewed until only network, SSH, Tailscale, CUPS and Avahi remain.
-2. `unattended-upgrades`, security only, reboot at 04:30 when required.
-3. Tailscale: install, `tailscale up --ssh`, ACL limited to the owner's devices.
-4. Printing: `cups`, `cups-filters`, `avahi-daemon`, plus the driver chain proven on the Mac (see "Driver on the Pi" below). Queue `HP_CP1025` on the USB URI, A4, monochrome default, error policy `retry-job`, no preserved job files.
-5. Access: print allowed from `@LOCAL` and `100.64.0.0/10`; admin requires an `lpadmin` user over HTTPS.
-6. Share: `cupsctl --share-printers`. CUPS 2.4 advertises shared queues as AirPrint through Avahi.
+### 2. Server setup (printing part done by hand; `setup.sh` not written)
+Each block must be safe to run again once it goes into `setup.sh`.
+1. **Not done.** Trim: `dtoverlay=disable-bt`, `hciuart` off, `dtoverlay=disable-wifi`, `gpu_mem=16`, `cups-browsed` off (already disabled on Trixie), `usbcore.autosuspend=-1`, and every other enabled service reviewed until only network, SSH, Tailscale, CUPS and Avahi remain.
+2. **Not done.** `unattended-upgrades`, security only, reboot at 04:30 when required.
+3. **Not done.** Tailscale: install, `tailscale up --ssh` (needs the owner to log in once through a link), ACL limited to the owner's devices.
+4. **Done.** Printing: `cups`, `cups-filters`, `avahi-daemon`, plus the driver chain proven on the Mac (see "Driver on the Pi" below). Queue `HP_CP1025` on the USB URI, A4, monochrome default, error policy `retry-job`, no preserved job files, system default.
+5. **Partly done.** Status pages on (`cupsctl WebInterface=yes`). Not done: print allowed only from `@LOCAL` and `100.64.0.0/10`; admin with an `lpadmin` user over HTTPS.
+6. **Done.** Share: `cupsctl --share-printers`. CUPS 2.4 advertises the queue as AirPrint through Avahi; the Mac sees "HP CP1025 @ impressora-pi" under `_ipp._tcp`.
 
-### 3. Measure and check (about 30 min)
-1. Run the queue's filter chain into a file (see "Driver on the Pi") for a black-and-white and a color page, and check with `zjsdecode` that pages and planes carry data, as on the Mac.
-2. Time one color A4 page and note peak memory with `/usr/bin/time -v`. Add `zram` only if peak memory needs it.
-3. Firmware upload: none was needed on the Mac, where the printer printed straight after power-on, so none is expected on the Pi either.
-4. Record Ghostscript version, seconds per page and peak memory in [../FINDINGS.md](../FINDINGS.md).
+### 3. Measure and check (done 2026-10-22)
+1. Ran the filter chain into files for a black-and-white and a color page and decoded them with `zjsdecode`: black and white = 1 page, no color planes; color = 1 page, 4 planes, each with ink.
+2. Times and memory: see "Hardware sizing" above.
+3. Firmware upload: none needed, as expected; the printer printed straight away.
+4. Ghostscript on the Pi is 10.05.1, the same version that renders blank `pksmraw` pages on the Mac. Through the `cups` device (`gstoraster`) it renders the page correctly: the decoded test page carries the same content as `pdftoraster`'s (3.7% versus 4.4% black dots; `gstoraster` turns light gray into white where `pdftoraster` dithers it).
 
-### 4. Clients (about 5 min each)
+### 4. Clients (about 5 min each, not done)
 | Device | At home | Away (Tailscale) |
 |---|---|---|
-| Mac | appears by itself (AirPrint) | add by address: `ipp://impressora.<tailnet>.ts.net/printers/HP_CP1025` |
+| Mac | appears by itself (AirPrint) | add by address: `ipp://impressora-pi.<tailnet>.ts.net/printers/HP_CP1025` |
 | iPhone / iPad | appears by itself | **not supported**: iOS only discovers AirPrint printers through Bonjour, which does not cross Tailscale, and cannot add one by address without a third-party app |
-| Android | default print service | add the printer by address |
+| Android | default print service (already printed, see "Problems found") | add the printer by address |
 | Linux | automatic | add the IPP URL |
 
-### 5. Validate (about 20 min)
+### 5. Validate (about 20 min, not done)
 1. Test page from Mac, iPhone and Android at home, checked on paper; monochrome by default, color when picked.
 2. One page from the Mac through Tailscale.
-3. Reboot the Pi and power-cycle the printer: the queue must recover on its own.
+3. Reboot the Pi and power-cycle the printer: the queue must recover on its own, and jobs must still start within seconds (proves the colord fix survives a reboot).
 4. The CUPS admin page asks for a password and refuses plain HTTP.
 5. Optional: rebuild a fresh SD card with `setup.sh` to prove the record works.
 
-## Driver on the Pi: repeat what works on the Mac
+## Driver on the Pi: what was run (2026-10-22)
 
-On the Mac the chain is `cgpdftoraster` (Apple) -> `cp1025-foo2zjs` -> `rastertopksm` -> `foo2zjs`. On the Pi only the first link changes: Linux CUPS turns PDF into CUPS raster with cups-filters' `pdftoraster` (or `gstoraster`), driven by the same PPD settings. The other three files are the same, and Linux CUPS has no macOS-style sandbox, so the two sandbox workarounds are harmless there.
+On the Mac the chain is `cgpdftoraster` (Apple) -> `cp1025-foo2zjs` -> `rastertopksm` -> `foo2zjs`. On the Pi only the first link changes: CUPS picks cups-filters' `gstoraster` (cost 99, ahead of `pdftoraster` at 100 in `/usr/share/cups/mime/cupsfilters.convs`), driven by the same PPD settings. Both rasterizers accept the PPD's 1-bit black and 8-bit chunky CMYK. The other three files are the same as on the Mac, unchanged.
 
 ```bash
-# on the Pi (Pi OS Lite 64-bit)
-sudo apt install -y cups cups-filters avahi-daemon build-essential libcups2-dev git
+# on the Pi (Pi OS Lite 64-bit, Trixie)
+sudo apt-get install -y cups cups-filters avahi-daemon build-essential libcups2-dev git time
+sudo systemctl reload dbus      # see "colord" under Problems found; without it every job waits 50 s
+
 git clone https://github.com/iklobato/hp-cp1025-monitor.git ~/hp-cp1025-monitor
-git clone --depth 1 https://github.com/koenkooi/foo2zjs.git ~/foo2zjs     # the Mac used commit e04290d
+git clone https://github.com/koenkooi/foo2zjs.git ~/foo2zjs && git -C ~/foo2zjs checkout e04290d
 
 cd ~/foo2zjs && cc -O2 -w -o foo2zjs foo2zjs.c jbig.c jbig_ar.c && cc -O2 -w -o zjsdecode zjsdecode.c jbig.c jbig_ar.c
-cd ~/hp-cp1025-monitor && cc -O2 -Wall -Wextra -o /tmp/rastertopksm driver/macos/rastertopksm.c -lcups
+cc -O2 -Wall -Wextra -o ~/rastertopksm ~/hp-cp1025-monitor/driver/macos/rastertopksm.c -lcups
 
 # filter + its two helpers in the same directory (the filter finds them next to itself)
 F=/usr/lib/cups/filter
-sudo install -o root -g root -m 755 driver/macos/cp1025-foo2zjs /tmp/rastertopksm ~/foo2zjs/foo2zjs "$F/"
+sudo install -o root -g root -m 755 ~/hp-cp1025-monitor/driver/macos/cp1025-foo2zjs ~/rastertopksm ~/foo2zjs/foo2zjs "$F/"
 
-# same PPD, filter path rewritten for Linux
-sed 's|/Library/Printers/foo2zjs/cp1025-foo2zjs|cp1025-foo2zjs|' driver/macos/HP_CP1025-foo2zjs.ppd > /tmp/HP_CP1025.ppd
+# same PPD, filter path rewritten for Linux (cupstestppd: PASS)
+sed 's|/Library/Printers/foo2zjs/cp1025-foo2zjs|cp1025-foo2zjs|' \
+  ~/hp-cp1025-monitor/driver/macos/HP_CP1025-foo2zjs.ppd > ~/HP_CP1025.ppd
 
-lpinfo -v | grep -i 'CP%201025'          # the usb:// URI
-sudo lpadmin -p HP_CP1025 -D "HP CP1025" -E -v '<usb URI>' -P /tmp/HP_CP1025.ppd \
-  -o printer-is-shared=true -o print-color-mode-default=monochrome -o printer-error-policy=retry-job
+sudo lpinfo -v | grep -i 1025          # needs root; gives usb://HP/LaserJet%20CP%201025?serial=<serial>
+sudo lpadmin -p HP_CP1025 -D "HP CP1025" -L Casa -E -v 'usb://HP/LaserJet%20CP%201025?serial=<serial>' \
+  -P ~/HP_CP1025.ppd -o printer-is-shared=true -o print-color-mode-default=monochrome \
+  -o printer-error-policy=retry-job -o PageSize=A4 -o ColorModel=Gray
+sudo lpadmin -d HP_CP1025
+sudo cupsctl --share-printers PreserveJobFiles=No WebInterface=yes
 ```
 
-Check before the first real print, same as on the Mac:
+The Linux USB URI starts `usb://HP/...`, not `usb://Hewlett-Packard/...` as on macOS. `lpadmin` warns that PPD drivers are deprecated in a future CUPS; CUPS 2.4 still runs them.
+
+Check the chain without paper (`cupsfilter -m printer/foo` stops at PostScript with this PPD and was not useful, so run the filters by hand):
 
 ```bash
-cupsfilter -p /tmp/HP_CP1025.ppd -m printer/foo -o ColorModel=CMYK -o PageSize=A4 test.pdf > out.zjs   # or run pdftoraster | cp1025-foo2zjs by hand
+export PPD=~/HP_CP1025.ppd
+o="ColorModel=CMYK PageSize=A4"
+/usr/lib/cups/filter/pdftoraster 1 me t 1 "$o" /usr/share/cups/data/default-testpage.pdf \
+  | /usr/lib/cups/filter/cp1025-foo2zjs 1 me t 1 "$o" > out.zjs
 ~/foo2zjs/zjsdecode < out.zjs | grep -c ZJT_START_PLANE    # 4 for a color page, 0 for black and white
 ```
 
-If `pdftoraster` rejects 1-bit black or 8-bit chunky CMYK (the two formats the PPD asks for), the fallback is the classic Linux route: Debian's `printer-driver-foo2zjs` with its own CP1025 PPD and `foo2zjs-wrapper`, plus the `-dMaxBitmap=2000000000` Ghostscript fix if pages come out blank.
+Read the printer's own status from the Pi (the CUPS USB backend does not hold the LEDM interface):
+
+```bash
+cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py /DevMgmt/ProductStatusDyn.xml
+```
+
+On Linux this script stops at `PORT_STATUS` with `LIBUSB_ERROR_IO`, because the kernel's `usblp` driver owns interface 0. Calling `LedmClient(...).get(path)` directly works and returned the status and page counter used in this file.
+
+## Problems found on the Pi (2026-10-22)
+
+| Problem | Cause | Fix | State |
+|---|---|---|---|
+| Each job sat about 50 s before printing; the owner thought prints failed and sent them again | `gstoraster` asks colord for a color profile over D-Bus. colord was installed with CUPS, but the D-Bus daemon had not loaded colord's new policy file, so colord could not own `org.freedesktop.ColorManager` ("lost name") and quit; each job waited for two 25 s `DBus.Error.NoReply` timeouts | `sudo systemctl reload dbus`. colord now answers (1.4.7) and a job starts rendering 1 s after it is queued | **fixed**; survival across a reboot not tested yet |
+| First phone job: tray reported `trayEmptyOrOpen` | paper not seated | owner reseated the paper | fixed |
+| Android job asked for US Letter (`media=Letter`) | the phone's print service picked Letter; the PPD offers A4 and Letter | planned: offer A4 only on the Pi | open |
+| Android job asked for color (`print-color-mode=color`) but printed in black and white | CUPS did not turn `print-color-mode=color` into `ColorModel=CMYK` for this PPD; the job kept the queue default `Gray` | to investigate (PPD color presets) | open |
+| The status pages said "Web Interface is Disabled" | Debian ships CUPS with `WebInterface No` | `cupsctl WebInterface=yes` | fixed |
+| `rastertopksm.c` builds with two `-Wenum-compare` warnings under GCC | it compares `cupsColorSpace` with its own enum instead of `CUPS_CSPACE_K` / `CUPS_CSPACE_CMYK` (same values 3 and 6, so the program is correct) | use the libcups constants | open |
 
 ## Not verified yet
-- That cups-filters' `pdftoraster` on Bookworm accepts the PPD's 1-bit black and 8-bit chunky CMYK settings (Apple's rasterizer does).
-- The CP1025 PPD name in Bookworm's foo2zjs package, only needed for the fallback route.
-- Whether the Pi's Ghostscript has the blank-page bug (only matters for the fallback route).
-- Seconds and peak memory per page on a Pi 3.
-- Whether the Imager-created user has passwordless `sudo` (expected on Pi OS, to confirm over SSH).
-- Printing on paper from the Pi. From the Mac it works with the same cartridges, which still show `incompatibleConsumable`.
+- That the colord fix survives a reboot.
+- Color on paper from the Pi (decoded ZJS only).
+- Whether the iPhone sees and prints to the Pi.
+- Tailscale printing from outside home.
+- Whether the Letter page from the Android phone came out right on A4 paper (the page counter rose by 3 for that 3-page job).
 
 ## Trade-off accepted
-Without the monitor on the Pi there is no toner or chip view once the printer leaves the Mac's USB, and foo2zjs does not report supply levels through CUPS, so AirPrint clients will not show them either. The monitor can be brought back later as a separate step.
+Without the monitor on the Pi there is no toner or chip view once the printer leaves the Mac's USB, and foo2zjs does not report supply levels through CUPS, so AirPrint clients will not show them either. The status can still be read by hand on the Pi (see above); bringing the dashboard to the Pi is a separate step.
 
 ## Sources
 - foo2zjs support for the CP1025: [mankier](https://mankier.com/package/foo2zjs), [Fedora package](https://packages.fedoraproject.org/pkgs/foo2zjs/foo2zjs)

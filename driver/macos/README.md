@@ -85,6 +85,7 @@ A black-only page shows no `ZJT_START_PLANE`; a color page shows four.
 `/private/var/log/cups/error_log` (needs `cupsctl --debug-logging` for the `DEBUG:` lines): look for `cp1025-foo2zjs page=...`, `rastertopksm wrote N page(s)` and `Sent N bytes`. A blank job from the old HP driver shows `Sent 464 bytes`.
 
 ## Known limits
+- The same filter, `rastertopksm` and PPD (with the filter path rewritten) also run on Linux CUPS; the Raspberry Pi print server uses them, see [../../docs/raspberry/README.md](../../docs/raspberry/README.md). GCC there warns `-Wenum-compare` on `rastertopksm.c` (it compares `cupsColorSpace` with its own constants 3 and 6 instead of `CUPS_CSPACE_K` / `CUPS_CSPACE_CMYK`); the values match, so the output is correct.
 - Color quality: plain 8x8 Bayer dither, no color profile. foo2zjs ships a CP1025 profile (`hp-cp1025-rgb-392-bpp1.icm`) that is not used yet.
 - Only A4 and US Letter.
 - macOS no longer reports toner levels for this queue (that came from the HP driver). The status monitor in this repo reads them over USB instead.
