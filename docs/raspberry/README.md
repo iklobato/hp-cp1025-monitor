@@ -18,7 +18,7 @@ Scope is network printing only. The status monitor in this repo is not part of t
 | Printing | **works over the network.** Queue `HP_CP1025` on the Pi's USB, shared, shown as "HP CP1025 @ impressora-pi" in AirPrint. 9 pages printed by 19:59 (jobs 1 to 7, from the Pi itself, an Android phone and a second network client); printer page counter went 1,317 to 1,326 |
 | Time per job | about 13 s from submit to done for one A4 page (job 7), after the colord fix below |
 | Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
-| Not done | trimming, security updates, Tailscale, access rules, admin over HTTPS, `setup.sh`, A4 and color for phone jobs, reboot test, moving the Mac to the network printer |
+| Not done | trimming, security updates, Tailscale, access rules, admin over HTTPS, `setup.sh`, reboot test, moving the Mac to the network printer |
 
 ## Decisions
 
@@ -118,11 +118,15 @@ sudo install -o root -g root -m 755 ~/hp-cp1025-monitor/driver/macos/cp1025-foo2
 # same PPD, filter path rewritten for Linux (cupstestppd: PASS)
 sed 's|/Library/Printers/foo2zjs/cp1025-foo2zjs|cp1025-foo2zjs|' \
   ~/hp-cp1025-monitor/driver/macos/HP_CP1025-foo2zjs.ppd > ~/HP_CP1025.ppd
+# Pi variant: A4 only (phones then cannot pick Letter) and CMYK as the PPD default, so that
+# print-color-mode=color reaches the CMYK mode; CUPS still applies Gray for monochrome jobs
+sed -e '/Letter/d' -e 's/^\*DefaultColorModel: Gray/*DefaultColorModel: CMYK/' \
+  ~/HP_CP1025.ppd > ~/HP_CP1025-pi.ppd
 
 sudo lpinfo -v | grep -i 1025          # needs root; gives usb://HP/LaserJet%20CP%201025?serial=<serial>
 sudo lpadmin -p HP_CP1025 -D "HP CP1025" -L Casa -E -v 'usb://HP/LaserJet%20CP%201025?serial=<serial>' \
-  -P ~/HP_CP1025.ppd -o printer-is-shared=true -o print-color-mode-default=monochrome \
-  -o printer-error-policy=retry-job -o PageSize=A4 -o ColorModel=Gray
+  -P ~/HP_CP1025-pi.ppd -o printer-is-shared=true -o print-color-mode-default=monochrome \
+  -o printer-error-policy=retry-job
 sudo lpadmin -d HP_CP1025
 sudo cupsctl --share-printers PreserveJobFiles=No WebInterface=yes
 ```
@@ -153,8 +157,8 @@ On Linux this script stops at `PORT_STATUS` with `LIBUSB_ERROR_IO`, because the 
 |---|---|---|---|
 | Each job sat about 50 s before printing; the owner thought prints failed and sent them again | `gstoraster` asks colord for a color profile over D-Bus. colord was installed with CUPS, but the D-Bus daemon had not loaded colord's new policy file, so colord could not own `org.freedesktop.ColorManager` ("lost name") and quit; each job waited for two 25 s `DBus.Error.NoReply` timeouts | `sudo systemctl reload dbus`. colord now answers (1.4.7) and a job starts rendering 1 s after it is queued | **fixed**; survival across a reboot not tested yet |
 | First phone job: tray reported `trayEmptyOrOpen` | paper not seated | owner reseated the paper | fixed |
-| Android job asked for US Letter (`media=Letter`) | the phone's print service picked Letter; the PPD offers A4 and Letter | planned: offer A4 only on the Pi | open |
-| Android job asked for color (`print-color-mode=color`) but printed in black and white | CUPS did not turn `print-color-mode=color` into `ColorModel=CMYK` for this PPD; the job kept the queue default `Gray` | to investigate (PPD color presets) | open |
+| Android job asked for US Letter (`media=Letter`) | the phone's print service picked Letter although the queue advertised A4 as default; the PPD offered A4 and Letter. Also, the filter read `media=Letter` and sent a Letter page even when the raster was drawn at A4 | the Pi's PPD offers A4 only (`media-supported` = `iso_a4_210x297mm`), and the filter now trusts only `PageSize` (which CUPS sets only for a size the PPD has) or the PPD default. On a test queue a `media=Letter` job now goes out as A4 (`paper=9`) | fixed; not yet tried from the phone |
+| Android job asked for color (`print-color-mode=color`) but printed in black and white | CUPS builds a preset only for monochrome (`ColorModel=Gray`) and leaves color jobs on the PPD default, which was `Gray` | PPD default `CMYK`, queue default `print-color-mode-default=monochrome`. On a test queue: no color asked = Gray (`cupsColorSpace 3`), `monochrome` = Gray, `color` = CMYK (`cupsColorSpace 6`) | fixed; not yet tried from the phone |
 | The status pages said "Web Interface is Disabled" | Debian ships CUPS with `WebInterface No` | `cupsctl WebInterface=yes` | fixed |
 | `rastertopksm.c` builds with two `-Wenum-compare` warnings under GCC | it compares `cupsColorSpace` with its own enum instead of `CUPS_CSPACE_K` / `CUPS_CSPACE_CMYK` (same values 3 and 6, so the program is correct) | use the libcups constants | open |
 
@@ -163,7 +167,8 @@ On Linux this script stops at `PORT_STATUS` with `LIBUSB_ERROR_IO`, because the 
 - Color on paper from the Pi (decoded ZJS only).
 - Whether the iPhone sees and prints to the Pi.
 - Tailscale printing from outside home.
-- Whether the Letter page from the Android phone came out right on A4 paper (the page counter rose by 3 for that 3-page job).
+- A4 and color from the Android phone on paper after the fixes (only checked on a test queue that sent the output nowhere).
+- Whether a Mac without the new filter could hit the old `media` fallback: the Mac's installed copy in `/Library/Printers/foo2zjs/` still has it until reinstalled.
 
 ## Trade-off accepted
 Without the monitor on the Pi there is no toner or chip view once the printer leaves the Mac's USB, and foo2zjs does not report supply levels through CUPS, so AirPrint clients will not show them either. The status can still be read by hand on the Pi (see above); bringing the dashboard to the Pi is a separate step.

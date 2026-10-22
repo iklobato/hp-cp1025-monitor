@@ -48,8 +48,9 @@ ppd_default() {
     sed -n "s/^\*Default$1: *//p" "$PPD" | head -n 1 | tr -d '\r'
 }
 
+# CUPS adds PageSize only when the requested media is one of the PPD's sizes; otherwise the
+# raster was drawn at the PPD default, so a bare media=Letter must not pick the Letter page.
 page_size=$(option PageSize)
-[[ -n "$page_size" ]] || page_size=$(option media)
 [[ -n "$page_size" ]] || page_size=$(ppd_default PageSize)
 case "$page_size" in
     Letter|na_letter*|letter) paper=1 width=5100 height=6600 ;;

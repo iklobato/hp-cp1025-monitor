@@ -153,7 +153,7 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 
 ## Still open, in order
 
-1. **Phone jobs**: the Android phone sends US Letter and its color request comes out black and white. Offer A4 only on the Pi and make `print-color-mode=color` select the CMYK mode.
+1. **Phone jobs, check on paper**: A4 only and color on request are fixed on the Pi and checked on a test queue (2026-10-22 20:10); print once from the Android phone in color to confirm.
 2. **Print a color page on paper** (from the Pi), to confirm the CMYK path and the dither (only checked by decoding the ZJS so far).
 3. **Move the Mac to the network printer**: delete the Mac's USB queue `HP_CP1025` and add "HP CP1025 @ impressora-pi".
 4. **Finish the Pi** ([raspberry/README.md](raspberry/README.md)): trim services, security updates, Tailscale (owner logs in once), print access limited to LAN and tailnet, admin over HTTPS, reserve its IP in the router, write `setup.sh` from the commands that were run, then reboot and power-cycle tests and a check from the iPhone.
