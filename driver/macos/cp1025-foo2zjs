@@ -1,0 +1,68 @@
+#!/bin/bash
+# CUPS filter for the HP LaserJet CP1025 on macOS: CUPS raster in, ZjStream (ZJS) out.
+#
+# Replaces the HP driver's hpcp1020 filter, which emits blank 464-byte jobs on macOS 14.
+# macOS's own cgpdftoraster draws each page (the PPD asks for 1-bit black or 8-bit CMYK
+# at 600 dpi), rastertopksm re-packs it as four 1-bit planes, foo2zjs encodes the ZJS.
+# foo2zjs settings follow the official foo2zjs-wrapper for this model (-z3 -P -L0,
+# 96x96 clipping at 600x600). Ghostscript is not used: the CUPS sandbox cannot reach it.
+#
+# CUPS calls it as: cp1025-foo2zjs job-id user title copies options [file]
+set -euo pipefail
+
+# rastertopksm and foo2zjs are installed next to this filter (macOS: /Library/Printers/foo2zjs).
+readonly DRIVER_DIR=${CP1025_DRIVER_DIR:-$(cd "$(dirname "$0")" && pwd)}
+readonly RES=600x600
+
+fail() {
+    printf 'ERROR: %s\n' "$1" >&2
+    exit 1
+}
+
+(( $# >= 5 )) || fail "usage: $0 job-id user title copies options [file]"
+user=$2
+title=$3
+copies=$4
+options=$5
+# The CUPS sandbox refuses to open /dev/stdin by path, so read the file only when given
+# one and otherwise keep the inherited stdin.
+if (( $# >= 6 )); then
+    exec < "$6"
+fi
+
+for tool in rastertopksm foo2zjs; do
+    [[ -x "$DRIVER_DIR/$tool" ]] || fail "$tool not found in $DRIVER_DIR"
+done
+
+option() {
+    # Value of NAME=VALUE in the CUPS options string, or empty.
+    local name=$1 word
+    for word in $options; do
+        [[ "$word" == "$name="* ]] && { printf '%s' "${word#*=}"; return; }
+    done
+    return 0
+}
+
+ppd_default() {
+    [[ -n "${PPD:-}" && -r "$PPD" ]] || return 0
+    sed -n "s/^\*Default$1: *//p" "$PPD" | head -n 1 | tr -d '\r'
+}
+
+page_size=$(option PageSize)
+[[ -n "$page_size" ]] || page_size=$(option media)
+[[ -n "$page_size" ]] || page_size=$(ppd_default PageSize)
+case "$page_size" in
+    Letter|na_letter*|letter) paper=1 width=5100 height=6600 ;;
+    *) paper=9 width=4960 height=7016 ;;
+esac
+
+[[ "$copies" =~ ^[0-9]+$ ]] || copies=1
+
+printf 'DEBUG: cp1025-foo2zjs page=%sx%s paper=%s copies=%s\n' \
+    "$width" "$height" "$paper" "$copies" >&2
+
+# Always color (pksm) input: a black-only raster leaves the C, M and Y planes empty and
+# foo2zjs then sends a black-only page.
+"$DRIVER_DIR/rastertopksm" "$width" "$height" \
+| "$DRIVER_DIR/foo2zjs" -r"$RES" -g"${width}x${height}" -p"$paper" -m1 -n"$copies" -d1 -s7 \
+    -z3 -P -L0 -c -u 96x96 -l 96x96 -J "$title" -U "$user"
