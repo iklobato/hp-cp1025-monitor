@@ -2,7 +2,7 @@
 
 Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), October 2026. Numbers are what was measured on this unit; dates are when they were measured.
 
-## Status (last checked 2026-10-19 00:05)
+## Status (last checked 2026-10-21 21:56)
 
 | Area | State |
 |---|---|
@@ -28,6 +28,21 @@ The printer reports cartridge errors and refuses print data until they clear. La
 The cartridges were made in 2013, the drum in 2010. Last use before this session: 2023-01-16. The previous black cartridge printed 594 pages (installed 2020-11-18).
 
 While a cartridge is in an error state with action `stop`, the print channel (interface 0) stops accepting data: CUPS reports `Unable to send data to printer` and the USB write returns `e00002ed`. PJL `INFO` queries on the same channel time out (`LIBUSB_ERROR_TIMEOUT`). The LEDM channel keeps answering.
+
+### Non-HP cartridges, 2026-10-21
+
+The black and yellow cartridges were swapped for non-HP ones. Their chips now read (black `DFB5/7679`, yellow `1833/60F3`) and report 100%, but the printer flags both as `incompatibleConsumable` with severity `Error`. Cartridge model ids written on the chips: the printer accepts `3901`, `3902`, `3903` (genuine HP yellow, magenta, cyan) and rejects `4500` (black) and `4501` (yellow).
+
+How printing was tested: a valid four-plane ZJS page sent raw to the CUPS queue, four times (jobs 14 to 17).
+
+| Time | Printer alerts | Bytes accepted |
+|---|---|---|
+| 21:35 | `trayEmptyOrOpen` + `incompatibleConsumable` | 0 (`e00002ed`) |
+| 21:42 | same; back-channel on EP `0x81` repeats `@PJL USTATUS DEVICE CODE=41900 ONLINE=FALSE` every 30 s (41xyy = load paper in HP PJL) | 0 |
+| 21:50 | paper reseated: only `incompatibleConsumable` left, status `processing` | 0 |
+| 21:56 | after a power cycle: still only `incompatibleConsumable` | 0 |
+
+So once the paper alert cleared, the incompatible-cartridge alert alone was enough to keep the printer from accepting any data, and a power cycle did not clear it. Not verified: why the chips are rejected (region lock or a chip the firmware does not know); whether a different brand of compatible cartridge would pass.
 
 ### Reseating session, as recorded in history.jsonl
 
@@ -121,15 +136,14 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 
 ## Still open, in order
 
-1. **Black cartridge (CE310A)**: reports `missing` with an unreadable chip (`0000/0000`, no brand) after a reseat. Most likely needs replacing with a CE310A whose chip works.
-2. **Yellow cartridge (CE312A)**: chip read fails on and off. Clean the gold contacts and reseat; replace if it keeps failing.
-3. **Network print server on a Raspberry Pi 3**: every decision is taken and written down in [raspberry/README.md](raspberry/README.md). Steps 0 to 4 do not depend on the cartridges and can start any time:
+1. **Black and yellow cartridges**: the non-HP ones fitted on 2026-10-21 are rejected (`incompatibleConsumable`) and block printing, even after a power cycle. Replace them with genuine HP 126A (CE310A black, CE312A yellow), or with compatibles known to work in a CP1025.
+2. **Network print server on a Raspberry Pi 3**: every decision is taken and written down in [raspberry/README.md](raspberry/README.md). Steps 0 to 4 do not depend on the cartridges and can start any time:
    - step 0, clean the Mac: delete the USB queue `HP_LaserJet_CP1025` and the HP 5.1.1 driver;
    - step 1, flash Pi OS Lite 64-bit (by hand);
    - step 2, `setup.sh` with CUPS, foo2zjs, Avahi, Tailscale and a trimmed system;
    - step 3, measure Ghostscript on the Pi (blank-page bug, time and memory per page);
    - step 4, add the clients.
-4. **Validate on paper** (step 5 of the plan) once items 1 and 2 are done: Mac, iPhone and Android at home, Mac through Tailscale, recovery after reboot and power-cycle.
+3. **Validate on paper** (step 5 of the plan) once item 1 is done: Mac, iPhone and Android at home, Mac through Tailscale, recovery after reboot and power-cycle.
 
 This replaces the earlier idea of a foo2zjs queue on the Mac itself: with the Pi, no computer needs a driver.
 
