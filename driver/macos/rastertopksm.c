@@ -17,7 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { CSPACE_K = 3, CSPACE_CMYK = 6, PLANES = 4, BLACK_PLANE = 3, MAX_DOTS = 20000 };
+enum { PLANES = 4, BLACK_PLANE = 3, MAX_DOTS = 20000 };
 
 /* 8x8 Bayer matrix, scaled to 0..255 thresholds. */
 static const unsigned char BAYER[8][8] = {
@@ -62,9 +62,9 @@ int main(int argc, char **argv)
     cups_page_header2_t header;
     unsigned pages = 0;
     while (cupsRasterReadHeader2(raster, &header)) {
-        int color = header.cupsColorSpace == CSPACE_CMYK;
+        int color = header.cupsColorSpace == CUPS_CSPACE_CMYK;
         if (color ? header.cupsBitsPerPixel != 32 || header.cupsColorOrder != CUPS_ORDER_CHUNKED
-                  : header.cupsColorSpace != CSPACE_K || header.cupsBitsPerPixel != 1)
+                  : header.cupsColorSpace != CUPS_CSPACE_K || header.cupsBitsPerPixel != 1)
             die("unsupported raster: need 1-bit K or 8-bit chunky CMYK");
         if (header.cupsWidth > page_w || header.cupsHeight > page_h)
             die("raster is larger than the page");

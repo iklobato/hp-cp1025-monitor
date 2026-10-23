@@ -171,7 +171,7 @@ def status_rows(report):
     return {
         "Estado": translate_category(report.status_category),
         "Carrossel": f"parado no cartucho {fmt(report.carousel)}",
-        "Fila do Mac": humanize_queue(report.queue),
+        "Fila CUPS": humanize_queue(report.queue),
     }
 
 
