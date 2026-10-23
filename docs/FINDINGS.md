@@ -12,6 +12,7 @@ Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), Octob
 | CUPS queue on the Mac | `HP_CP1025` (USB) still exists but no longer reaches the printer; to be replaced by the network printer. The HP CP102x driver files stay in `/Library/Printers/hp-cp1020-backup-20261022/` |
 | Status reading (LEDM) | works on the Pi: the web dashboard runs there as a service at `http://impressora-pi.local:8025`, one reading every 10 s (about 210 ms each). The terminal and web dashboards still run on a Mac too, when the printer is on its USB |
 | Terminal and web dashboards | done and refactored; 38 tests, all passing, no printer needed |
+| HDMI monitor on the Pi | since 2026-10-23 the Pi also drives a monitor with a carousel (market, rates, news, weather, fuel and lottery, printer and Pi screens) and a settings page on the home network at port 8026. Code and notes: [../pi-dashboard/README.md](../pi-dashboard/README.md). `setup.sh` does not install it yet |
 | Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,328 at 22:35, only that alert |
 
 ## Cartridge history (printing no longer blocked)
@@ -151,6 +152,7 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 10. **Printing works**: wrote a macOS CUPS driver around foo2zjs (`cgpdftoraster` + `rastertopksm` + foo2zjs), replaced the HP queue with `HP_CP1025`, and printed a page on paper (2026-10-22). See [../driver/macos/README.md](../driver/macos/README.md).
 11. **Network printing works** (2026-10-22 evening): flashed Pi OS Lite 64-bit Trixie on a Raspberry Pi 3, rebuilt the same driver chain there (`gstoraster` from cups-filters replaces Apple's rasterizer; the filter, `rastertopksm` and foo2zjs are unchanged), shared the queue as AirPrint, and printed 9 pages from the Pi and from phones. Found and fixed a 50 s wait per job (colord could not start until D-Bus reloaded its policy). Measured 13 s per one-page job and 305 MB peak memory. Then made phone jobs print on A4 and in color when asked: the filter ignores a bare `media` option, and the Pi's PPD offers A4 only and defaults to CMYK while the queue stays monochrome by default. See [raspberry/README.md](raspberry/README.md).
 12. **Pi hardened and dashboard moved** (2026-10-22 night): security-only automatic updates with a 04:30 reboot when needed; reboot test passed (back in 57 s, colord fix holds); `usblp` blacklisted so the port status can be read; the web dashboard runs on the Pi as a systemd service on the home LAN, reading every 10 s because faster readings made CUPS miss the printer; `setup.sh` rebuilds all of it, was run 8 times on the Pi and once more downloaded from GitHub, and the Pi now runs `main` as installed by it; `rastertopksm.c` uses libcups' color-space constants (no more GCC warning, output byte-identical); the dashboard checks the current queue name and no longer says "Mac" on the Pi.
+13. **HDMI monitor on the Pi** (2026-10-23): a carousel drawn straight into the framebuffer, set from a page on the home network, with its own screen for this printer (verdict, toner, events, USB) and for the Pi. The code is in `pi-dashboard/` with personal values kept out of the repo, and big downloads are kept on disk so a restart does not fetch them again.
 
 ## Still open, in order
 
@@ -158,7 +160,8 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 2. **Reinstall the filter on the Mac** if the Mac uses its USB queue again: its installed copy in `/Library/Printers/foo2zjs/` still reads the bare `media` option.
 3. **Move the Mac to the network printer**: delete the Mac's USB queue `HP_CP1025` and add "HP CP1025 @ impressora-pi".
 4. **Finish the Pi** ([raspberry/README.md](raspberry/README.md)): Tailscale (owner logs in once), print access limited to LAN and tailnet, admin over HTTPS, trim services, reserve its IP in the router, power-cycle the printer, a check from the iPhone, and one `setup.sh` run on a blank card.
-5. **Optional**: genuine HP 126A black and yellow. Not needed to print, but the printer keeps an `incompatibleConsumable` error and cannot report their level.
+5. **HDMI monitor**: look at its printer screen with the printer on (a full reading has not been shown yet), decide whether `setup.sh` installs it, and whether its settings page should answer on the tailnet once Tailscale is on (it answers private addresses only).
+6. **Optional**: genuine HP 126A black and yellow. Not needed to print, but the printer keeps an `incompatibleConsumable` error and cannot report their level.
 
 ## Not verified yet
 

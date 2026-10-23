@@ -21,8 +21,9 @@ Scope is network printing only. The status monitor in this repo is not part of t
 | Survives a reboot | yes (2026-10-22 22:28): back in 57 s with CUPS, Avahi, the queue and the fast job start; jobs start rendering 1 s after they are queued |
 | Updates | security updates install every day by themselves (Debian-Security only); reboot at 04:30 when a patch needs it |
 | Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0); the Pi now runs `main` as installed by it |
+| HDMI monitor (2026-10-23) | `dashboard.service` draws a carousel on the monitor (tty1, framebuffer) from [`pi-dashboard/`](../../pi-dashboard/README.md); settings page `http://impressora-pi.local:8026`, private addresses only, so the tailnet (100.64.0.0/10) is refused until decided. About 22% of one core on average, 52 to 60 C, no throttling (`throttled=0x0`). Not installed by `setup.sh` yet |
 | Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
-| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card |
+| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card, installing the HDMI monitor from `setup.sh` |
 
 ## Decisions
 
