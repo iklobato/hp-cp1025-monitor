@@ -72,6 +72,12 @@ ANP_PAGE_URL = (
     "levantamento-de-precos-de-combustiveis-ultimas-semanas-pesquisadas"
 )
 ANP_TIMEOUT_SECONDS = 90
+# Big files kept on disk so a restart does not download them again: every start fetched the
+# 14.6 MB Tesouro file, and the first try after a restart sometimes failed to connect.
+DOWNLOAD_DIR = CACHE_DIR / "downloads"
+TESOURO_KEEP = timedelta(hours=12)  # one new price row per business day
+ANP_KEEP = timedelta(days=7)  # a published weekly survey file never changes
+DOWNLOAD_PRUNE = timedelta(days=30)
 SGS_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{code}/dados?formato=json&dataInicial={start}&dataFinal={end}"
 
 
@@ -865,18 +871,49 @@ def tesouro_from_csv(text: str, since: date) -> Tesouro:
     )
 
 
+def kept_download(url: str, keep: timedelta, folder: Path, now: float) -> bytes | None:
+    """The copy of `url` saved by store_download, while younger than `keep`."""
+    path = folder / hashlib.sha1(url.encode()).hexdigest()
+    try:
+        if now - path.stat().st_mtime < keep.total_seconds():
+            return path.read_bytes()
+    except OSError:
+        pass
+    return None
+
+
+def store_download(url: str, body: bytes, folder: Path, now: float) -> None:
+    """Called only after the body was read successfully, so an error page is never kept."""
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / hashlib.sha1(url.encode()).hexdigest()
+    temporary = path.with_suffix(".tmp")
+    temporary.write_bytes(body)
+    temporary.replace(path)
+    for old in folder.iterdir():
+        if now - old.stat().st_mtime > DOWNLOAD_PRUNE.total_seconds():
+            old.unlink(missing_ok=True)
+
+
 def fetch_tesouro(
     since: date,
     fetch: Callable[[str], bytes] = partial(
         fetch_bytes, timeout=TESOURO_TIMEOUT_SECONDS
     ),
+    folder: Path = DOWNLOAD_DIR,
+    now: Callable[[], float] = time.time,
 ):
-    body = fetch(TESOURO_URL)
+    body = kept_download(TESOURO_URL, TESOURO_KEEP, folder, now())
+    downloaded = body is None
+    if downloaded:
+        body = fetch(TESOURO_URL)
     try:
         text = body.decode("utf-8")
     except UnicodeDecodeError:
         text = body.decode("latin-1")
-    return tesouro_from_csv(text, since)
+    result = tesouro_from_csv(text, since)
+    if downloaded:
+        store_download(TESOURO_URL, body, folder, now())
+    return result
 
 
 FOCUS_URL = (
@@ -1135,6 +1172,8 @@ def fetch_fuel_weeks(
     cities: tuple[str, ...],
     weeks: int = 2,
     fetch: Callable[[str], bytes] = partial(fetch_bytes, timeout=ANP_TIMEOUT_SECONDS),
+    folder: Path = DOWNLOAD_DIR,
+    now: Callable[[], float] = time.time,
 ):
     """The newest `weeks` station surveys for these cities, newest first."""
     files = anp_station_files(fetch(ANP_PAGE_URL).decode("utf-8", errors="replace"))
@@ -1142,10 +1181,16 @@ def fetch_fuel_weeks(
         raise SourceError("ANP sem planilhas")
     result = []
     for end, url in files[:weeks]:
+        body = kept_download(url, ANP_KEEP, folder, now())
+        downloaded = body is None
+        if downloaded:
+            body = fetch(url)
         try:
-            prices = station_prices(xlsx_rows(fetch(url)), cities)
+            prices = station_prices(xlsx_rows(body), cities)
         except (zipfile.BadZipFile, KeyError, ET.ParseError) as err:
             raise SourceError("planilha da ANP ilegível") from err
+        if downloaded:
+            store_download(url, body, folder, now())
         result.append(FuelWeek(end, prices))
     return tuple(result)
 
@@ -2020,6 +2065,48 @@ def selftest() -> None:
         pass
     else:
         raise AssertionError("a changed spreadsheet must fail loudly")
+    csv = (
+        "Tipo Titulo;Data Vencimento;Data Base;Taxa Compra Manha;Taxa Venda Manha;PU Compra Manha;PU Venda Manha;PU Base Manha\n"
+        "Tesouro Selic;01/03/2027;22/10/2026;0,02;0,03;20101,10;20090,00;20090,00\n"
+    ).encode()
+    with tempfile.TemporaryDirectory() as tmp:
+        downloads, moment = (
+            [],
+            [time.time()],
+        )  # file times are real, so the clock starts now
+
+        def counted(url: str) -> bytes:
+            downloads.append(url)
+            return csv
+
+        def broken(url: str) -> bytes:
+            downloads.append(url)
+            return b"<html>pagina de erro</html>"
+
+        folder = Path(tmp)
+        try:
+            fetch_tesouro(date(2026, 1, 1), broken, folder, lambda: moment[0])
+        except SourceError:
+            pass
+        else:
+            raise AssertionError("an error page must fail")
+        assert not list(folder.iterdir()), "an error page is never kept"
+        first = fetch_tesouro(date(2026, 1, 1), counted, folder, lambda: moment[0])
+        moment[0] += 3600
+        again = fetch_tesouro(date(2026, 1, 1), counted, folder, lambda: moment[0])
+        assert first == again and len(downloads) == 2, (
+            "a restart within 12 h reads the disk copy"
+        )
+        stamp = moment[0] + TESOURO_KEEP.total_seconds()
+        for kept in folder.iterdir():
+            os.utime(kept, (stamp - 13 * 3600, stamp - 13 * 3600))
+        fetch_tesouro(date(2026, 1, 1), counted, folder, lambda: stamp)
+        assert len(downloads) == 3, "an old copy is downloaded again"
+        old = folder / "sobra"
+        old.write_bytes(b"x")
+        os.utime(old, (0, 0))
+        store_download("https://x", b"y", folder, stamp)
+        assert not old.exists(), "copies older than 30 days are deleted"
 
     with tempfile.TemporaryDirectory() as tmp:
         history = Path(tmp) / "history.jsonl"
