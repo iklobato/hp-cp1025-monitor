@@ -8,7 +8,7 @@ Mac / iPhone / Android / Linux  --AirPrint/IPP-->  Raspberry Pi 3 (CUPS + foo2zj
 
 Scope is network printing only. The status monitor in this repo is not part of the Pi setup.
 
-## Status (last checked 2026-10-22 22:46)
+## Status (last checked 2026-10-22 22:56)
 
 | Area | State |
 |---|---|
@@ -20,7 +20,7 @@ Scope is network printing only. The status monitor in this repo is not part of t
 | Status dashboard | `http://impressora-pi.local:8025`: the repo's web dashboard as a systemd service (`cp1025-dashboard`), read-only, open to the home LAN, one reading every 10 s. It showed a page printed at 22:35 live ("+1 página(s) impressa(s), total 1328") |
 | Survives a reboot | yes (2026-10-22 22:28): back in 57 s with CUPS, Avahi, the queue and the fast job start; jobs start rendering 1 s after they are queued |
 | Updates | security updates install every day by themselves (Debian-Security only); reboot at 04:30 when a patch needs it |
-| Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi, the last runs changed nothing |
+| Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0); the Pi now runs `main` as installed by it |
 | Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
 | Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card |
 

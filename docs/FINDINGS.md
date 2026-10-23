@@ -2,7 +2,7 @@
 
 Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), October 2026. Numbers are what was measured on this unit; dates are when they were measured.
 
-## Status (last checked 2026-10-22 22:46)
+## Status (last checked 2026-10-22 22:56)
 
 | Area | State |
 |---|---|
@@ -150,7 +150,7 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 9. Planned the move to a network print server on a Raspberry Pi 3 and took every decision with the owner (2026-10-19): hardware, OS, Tailscale for remote printing, monochrome default, access rules, automatic security updates, a rebuildable `setup.sh`. Found while planning: Bonjour does not cross Tailscale, so iPhone and iPad can only print at home. See [raspberry/README.md](raspberry/README.md).
 10. **Printing works**: wrote a macOS CUPS driver around foo2zjs (`cgpdftoraster` + `rastertopksm` + foo2zjs), replaced the HP queue with `HP_CP1025`, and printed a page on paper (2026-10-22). See [../driver/macos/README.md](../driver/macos/README.md).
 11. **Network printing works** (2026-10-22 evening): flashed Pi OS Lite 64-bit Trixie on a Raspberry Pi 3, rebuilt the same driver chain there (`gstoraster` from cups-filters replaces Apple's rasterizer; the filter, `rastertopksm` and foo2zjs are unchanged), shared the queue as AirPrint, and printed 9 pages from the Pi and from phones. Found and fixed a 50 s wait per job (colord could not start until D-Bus reloaded its policy). Measured 13 s per one-page job and 305 MB peak memory. Then made phone jobs print on A4 and in color when asked: the filter ignores a bare `media` option, and the Pi's PPD offers A4 only and defaults to CMYK while the queue stays monochrome by default. See [raspberry/README.md](raspberry/README.md).
-12. **Pi hardened and dashboard moved** (2026-10-22 night): security-only automatic updates with a 04:30 reboot when needed; reboot test passed (back in 57 s, colord fix holds); `usblp` blacklisted so the port status can be read; the web dashboard runs on the Pi as a systemd service on the home LAN, reading every 10 s because faster readings made CUPS miss the printer; `setup.sh` rebuilds all of it and was run 8 times on the Pi; `rastertopksm.c` uses libcups' color-space constants (no more GCC warning, output byte-identical); the dashboard checks the current queue name and no longer says "Mac" on the Pi.
+12. **Pi hardened and dashboard moved** (2026-10-22 night): security-only automatic updates with a 04:30 reboot when needed; reboot test passed (back in 57 s, colord fix holds); `usblp` blacklisted so the port status can be read; the web dashboard runs on the Pi as a systemd service on the home LAN, reading every 10 s because faster readings made CUPS miss the printer; `setup.sh` rebuilds all of it, was run 8 times on the Pi and once more downloaded from GitHub, and the Pi now runs `main` as installed by it; `rastertopksm.c` uses libcups' color-space constants (no more GCC warning, output byte-identical); the dashboard checks the current queue name and no longer says "Mac" on the Pi.
 
 ## Still open, in order
 
