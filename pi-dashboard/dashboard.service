@@ -1,0 +1,22 @@
+[Unit]
+Description=News and market dashboard drawn on the HDMI framebuffer
+Wants=network-online.target
+After=network-online.target getty@tty1.service
+Conflicts=getty@tty1.service
+
+[Service]
+User=iklo
+SupplementaryGroups=video tty
+WorkingDirectory=/home/iklo
+ExecStart=/usr/bin/python3 /home/iklo/dashboard/screen.py run
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

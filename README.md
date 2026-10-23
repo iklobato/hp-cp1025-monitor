@@ -18,6 +18,8 @@ Monitoring works (terminal and web, about 250 ms per full reading) while the pri
 
 Since the evening of 2026-10-22 the printer sits on a **Raspberry Pi 3 network print server** that reuses the same driver chain (CUPS + foo2zjs, shared as AirPrint). It prints from the network in about 13 to 18 s per page, serves this repo's web dashboard to the home LAN at `http://impressora-pi.local:8025`, installs security updates by itself, and can be rebuilt with `docs/raspberry/setup.sh`; Tailscale and access rules are still to do: [docs/raspberry/README.md](docs/raspberry/README.md). The ordered next steps and what is still unverified are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
 
+The same Pi drives an HDMI monitor with a carousel of market, rates, news, weather, fuel, lottery, printer and Pi screens, set from a page on the home network: [pi-dashboard/README.md](pi-dashboard/README.md).
+
 ## Requirements
 
 - macOS (tested on 14.6.1, Intel) or Linux (tested on Raspberry Pi OS Trixie). The USB hub-path panel uses `ioreg` and is empty on Linux; everything else is plain libusb. On Linux the kernel `usblp` driver must not hold the printer (see `docs/raspberry/setup.sh`).
