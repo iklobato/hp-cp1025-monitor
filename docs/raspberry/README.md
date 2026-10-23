@@ -8,14 +8,14 @@ Mac / iPhone / Android / Linux  --AirPrint/IPP-->  Raspberry Pi 3 (CUPS + foo2zj
 
 Scope is network printing only. The status monitor in this repo is not part of the Pi setup.
 
-## Status (last checked 2026-10-22 19:59)
+## Status (last checked 2026-10-22 21:58)
 
 | Area | State |
 |---|---|
 | Pi | Raspberry Pi 3 Model B Rev 1.2, wired, `impressora-pi.local` (`192.168.1.177` from DHCP, not reserved yet) |
 | OS | Raspberry Pi OS Lite 64-bit **Trixie** (Debian 13), image 2026-10-06, kernel 6.18.50 |
 | Login | `ssh impressora` from the Mac (key `~/.ssh/impressora`, user `iklo`); SSH password login is off; `sudo` without password |
-| Printing | **works over the network.** Queue `HP_CP1025` on the Pi's USB, shared, shown as "HP CP1025 @ impressora-pi" in AirPrint. 9 pages printed by 19:59 (jobs 1 to 7, from the Pi itself, an Android phone and a second network client); printer page counter went 1,317 to 1,326 |
+| Printing | **works over the network.** Queue `HP_CP1025` on the Pi's USB, shared, shown as "HP CP1025 @ impressora-pi" in AirPrint. 10 pages printed by 21:58 (jobs 1 to 7 and 14, from the Pi itself, an Android phone and a second network client; jobs 8 to 13 went to a test queue, not to paper); printer page counter went 1,317 to 1,327. The last phone job (14, 21:36) asked for color and went out as A4 color (`cupsColorSpace 6`), 20 s from queue to done |
 | Time per job | about 13 s from submit to done for one A4 page (job 7), after the colord fix below |
 | Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
 | Not done | trimming, security updates, Tailscale, access rules, admin over HTTPS, `setup.sh`, reboot test, moving the Mac to the network printer |
@@ -71,7 +71,7 @@ Each block must be safe to run again once it goes into `setup.sh`.
 1. **Not done.** Trim: `dtoverlay=disable-bt`, `hciuart` off, `dtoverlay=disable-wifi`, `gpu_mem=16`, `cups-browsed` off (already disabled on Trixie), `usbcore.autosuspend=-1`, and every other enabled service reviewed until only network, SSH, Tailscale, CUPS and Avahi remain.
 2. **Not done.** `unattended-upgrades`, security only, reboot at 04:30 when required.
 3. **Not done.** Tailscale: install, `tailscale up --ssh` (needs the owner to log in once through a link), ACL limited to the owner's devices.
-4. **Done.** Printing: `cups`, `cups-filters`, `avahi-daemon`, plus the driver chain proven on the Mac (see "Driver on the Pi" below). Queue `HP_CP1025` on the USB URI, A4, monochrome default, error policy `retry-job`, no preserved job files, system default.
+4. **Done.** Printing: `cups`, `cups-filters`, `avahi-daemon`, plus the driver chain proven on the Mac (see "Driver on the Pi" below). Queue `HP_CP1025` on the USB URI with the Pi PPD variant (A4 only, CMYK as PPD default), monochrome queue default, error policy `retry-job`, no preserved job files, system default.
 5. **Partly done.** Status pages on (`cupsctl WebInterface=yes`). Not done: print allowed only from `@LOCAL` and `100.64.0.0/10`; admin with an `lpadmin` user over HTTPS.
 6. **Done.** Share: `cupsctl --share-printers`. CUPS 2.4 advertises the queue as AirPrint through Avahi; the Mac sees "HP CP1025 @ impressora-pi" under `_ipp._tcp`.
 
@@ -157,17 +157,17 @@ On Linux this script stops at `PORT_STATUS` with `LIBUSB_ERROR_IO`, because the 
 |---|---|---|---|
 | Each job sat about 50 s before printing; the owner thought prints failed and sent them again | `gstoraster` asks colord for a color profile over D-Bus. colord was installed with CUPS, but the D-Bus daemon had not loaded colord's new policy file, so colord could not own `org.freedesktop.ColorManager` ("lost name") and quit; each job waited for two 25 s `DBus.Error.NoReply` timeouts | `sudo systemctl reload dbus`. colord now answers (1.4.7) and a job starts rendering 1 s after it is queued | **fixed**; survival across a reboot not tested yet |
 | First phone job: tray reported `trayEmptyOrOpen` | paper not seated | owner reseated the paper | fixed |
-| Android job asked for US Letter (`media=Letter`) | the phone's print service picked Letter although the queue advertised A4 as default; the PPD offered A4 and Letter. Also, the filter read `media=Letter` and sent a Letter page even when the raster was drawn at A4 | the Pi's PPD offers A4 only (`media-supported` = `iso_a4_210x297mm`), and the filter now trusts only `PageSize` (which CUPS sets only for a size the PPD has) or the PPD default. On a test queue a `media=Letter` job now goes out as A4 (`paper=9`) | fixed; not yet tried from the phone |
-| Android job asked for color (`print-color-mode=color`) but printed in black and white | CUPS builds a preset only for monochrome (`ColorModel=Gray`) and leaves color jobs on the PPD default, which was `Gray` | PPD default `CMYK`, queue default `print-color-mode-default=monochrome`. On a test queue: no color asked = Gray (`cupsColorSpace 3`), `monochrome` = Gray, `color` = CMYK (`cupsColorSpace 6`) | fixed; not yet tried from the phone |
+| Android job asked for US Letter (`media=Letter`) | the phone's print service picked Letter although the queue advertised A4 as default; the PPD offered A4 and Letter. Also, the filter read `media=Letter` and sent a Letter page even when the raster was drawn at A4 | the Pi's PPD offers A4 only (`media-supported` = `iso_a4_210x297mm`), and the filter now trusts only `PageSize` (which CUPS sets only for a size the PPD has) or the PPD default. On a test queue a `media=Letter` job now goes out as A4 (`paper=9`) | fixed; the next phone job (14) asked for A4 and went out as A4 |
+| Android job asked for color (`print-color-mode=color`) but printed in black and white | CUPS builds a preset only for monochrome (`ColorModel=Gray`) and leaves color jobs on the PPD default, which was `Gray` | PPD default `CMYK`, queue default `print-color-mode-default=monochrome`. On a test queue: no color asked = Gray (`cupsColorSpace 3`), `monochrome` = Gray, `color` = CMYK (`cupsColorSpace 6`) | fixed; phone job 14 (color) rendered in CMYK and printed (page counter +1) |
 | The status pages said "Web Interface is Disabled" | Debian ships CUPS with `WebInterface No` | `cupsctl WebInterface=yes` | fixed |
 | `rastertopksm.c` builds with two `-Wenum-compare` warnings under GCC | it compares `cupsColorSpace` with its own enum instead of `CUPS_CSPACE_K` / `CUPS_CSPACE_CMYK` (same values 3 and 6, so the program is correct) | use the libcups constants | open |
 
 ## Not verified yet
 - That the colord fix survives a reboot.
-- Color on paper from the Pi (decoded ZJS only).
+- How the color page from the phone (job 14) looks on paper: it printed, but nobody has reported the colors yet.
 - Whether the iPhone sees and prints to the Pi.
 - Tailscale printing from outside home.
-- A4 and color from the Android phone on paper after the fixes (only checked on a test queue that sent the output nowhere).
+- A phone job that asks for Letter, after the fixes (only checked on the test queue).
 - Whether a Mac without the new filter could hit the old `media` fallback: the Mac's installed copy in `/Library/Printers/foo2zjs/` still has it until reinstalled.
 
 ## Trade-off accepted
