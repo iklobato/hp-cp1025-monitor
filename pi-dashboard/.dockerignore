@@ -1,0 +1,7 @@
+__pycache__
+*.pyc
+carrossel.toml
+carrossel.toml.bak
+Dockerfile
+.dockerignore
+README.md
