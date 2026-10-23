@@ -136,6 +136,11 @@ def main():
         "--port", type=int, default=web_dashboard.DEFAULT_PORT, help="porta do --web"
     )
     parser.add_argument(
+        "--host",
+        default=web_dashboard.HOST,
+        help="endereco do --web (0.0.0.0 abre para a rede local)",
+    )
+    parser.add_argument(
         "--full",
         action="store_true",
         help="mostra tambem chip, contadores, USB, log e configuracao",
@@ -152,7 +157,7 @@ def main():
     console = Console(no_color=args.no_color or None)
     try:
         if args.web:
-            web_dashboard.serve(args.warn, args.port)
+            web_dashboard.serve(args.warn, args.port, args.host)
         if args.live:
             live(console, args.warn)
         if args.watch:

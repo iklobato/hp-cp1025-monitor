@@ -1,6 +1,7 @@
 """Local real-time web dashboard: one reader thread polls the printer, browsers get Server-Sent Events.
 
-Binds to 127.0.0.1 only and exposes read-only GET endpoints:
+Binds to 127.0.0.1 unless told otherwise (the Raspberry Pi serves the home LAN) and exposes
+read-only GET endpoints:
   /             the page (dashboard.html)
   /api/status   latest reading as JSON
   /events       SSE stream, one JSON message per new reading
@@ -138,12 +139,12 @@ def make_handler(feed):
     return Handler
 
 
-def serve(warn_percent, port=DEFAULT_PORT):
+def serve(warn_percent, port=DEFAULT_PORT, host=HOST):
     feed = PrinterFeed(warn_percent)
     threading.Thread(target=feed.run_forever, name="printer-feed", daemon=True).start()
-    server = ThreadingHTTPServer((HOST, port), make_handler(feed))
+    server = ThreadingHTTPServer((host, port), make_handler(feed))
     server.daemon_threads = True
-    print(f"Dashboard em http://{HOST}:{port}  (Ctrl+C para sair)")
+    print(f"Dashboard em http://{host}:{port}  (Ctrl+C para sair)", flush=True)
     try:
         server.serve_forever()
     finally:

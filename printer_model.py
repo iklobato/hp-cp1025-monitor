@@ -13,7 +13,7 @@ from enum import IntEnum
 import hpstatus
 import macos_usb
 
-QUEUE_NAME = "HP_LaserJet_CP1025"
+QUEUE_NAME = "HP_CP1025"
 OK_STATES = {"ok"}
 CHIP_FAULT_STATES = {"missingMemory", "defectiveMemory"}
 LABEL_TO_COLOR = {
