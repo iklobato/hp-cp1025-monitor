@@ -1,7 +1,8 @@
 """Market pages, quotes from Yahoo (no key).
 
-Mercado: four highlighted quotes with large 1d/1w/1m charts, Brazilian stocks in a
-three-column table, news by topic, and a one-line technology ticker.
+Mercado: highlighted quotes and a table of stocks, each with its 1d/1w/1m change as numbers.
+Full: big cards on top and a three-column table. Compact (beside the rates): two lists.
+News lives only on the news screen.
 Mercado mundo: US, European and Asian indices, currencies, crypto and commodities.
 """
 
@@ -12,9 +13,8 @@ from datetime import datetime, timedelta, timezone
 import fields
 import sources
 import ui
-from page_news import NewsCache
 from PIL import Image, ImageDraw
-from sources import PERIODS, Feed, Series, SourceError, Story
+from sources import PERIODS, Series, SourceError
 
 
 @dataclass(frozen=True)
@@ -113,16 +113,10 @@ WORLD_CHIPS = (
     ("Cripto", "BTC-USD"),
 )
 FETCH_WORKERS = 8
-# The ticker shows a different story each time the page is drawn, cycling through these many.
-TICKER_STORIES = 12
-TICKER_STEP_SECONDS = 30
-
-# Mercado page bands, relative to the top of the page box.
-HIGHLIGHT_BAND = (0, 330)
-STOCKS_BAND = (342, 582)
-NEWS_BAND = (594, 944)
-TICKER_BAND = (952, 992)
-STOCK_ROW = 50
+HIGHLIGHT_BAND = (0, 170)
+STOCKS_TOP = 182
+STOCK_ROW = 36
+TWO_LINE_ROW = 46  # rows this tall also get the "last session" note under the name
 CARD_HEADER = 44
 # Three columns of 6-7 quotes each, so no column is left half empty.
 WORLD_COLUMNS = (
@@ -180,7 +174,7 @@ def gather_quotes(
 
 def change_text(series: Series) -> str:
     stale = " ✘" if series.stale else ""
-    return f"{ui.arrow(series.change)} {sources.br_percent(series.change)}{stale}"
+    return movement(series.change)[0] + stale
 
 
 def old_quote_note(series: Series, now: datetime) -> str:
@@ -199,16 +193,6 @@ def failure(error: SourceError) -> tuple[str, tuple]:
 
 def missing_outcomes(found: dict) -> list[SourceError]:
     return [LOADING if not found else SourceError("sem dados")] * len(PERIODS)
-
-
-def quote_chart(draw, box: tuple, series: Series) -> None:
-    ui.line_chart(
-        draw,
-        box,
-        series.path,
-        ui.trend_color(series.change),
-        baseline=series.previous_close,
-    )
 
 
 def chips(
@@ -231,6 +215,38 @@ def chips(
         )
         items.append((name, state, color))
     return items
+
+
+def movement(change: float) -> tuple[str, tuple]:
+    """'▲ +1,78%' and its color; the arrow follows the number shown, so +0,00% gets none."""
+    shown = round(change * 100, 2)
+    return f"{ui.arrow(shown)} {sources.br_percent(change)}", ui.trend_color(shown)
+
+
+def change_cell(draw, x: float, y: float, label: str, outcome: Outcome, face) -> None:
+    """'1d ▲ +1,78%': the window in grey, then arrow and change in the trend color."""
+    if label:
+        label_face = ui.font(face.size - 2)
+        draw.text((x, y), label, font=label_face, fill=ui.DIM, anchor="ls")
+        x += label_face.getlength(label) + 6
+    if isinstance(outcome, SourceError):
+        pending = outcome is LOADING
+        draw.text(
+            (x, y),
+            "…" if pending else "✘",
+            font=face,
+            fill=ui.DIM if pending else ui.RED,
+            anchor="ls",
+        )
+        return
+    text, color = movement(outcome.change)
+    draw.text(
+        (x, y),
+        text + (" ✘" if outcome.stale else ""),
+        font=face,
+        fill=color,
+        anchor="ls",
+    )
 
 
 def draw_highlight(
@@ -271,49 +287,24 @@ def draw_highlight(
             (right - pad, top + 88),
             change_text(day),
             font=ui.font(24, bold=True),
-            fill=ui.trend_color(day.change),
+            fill=movement(day.change)[1],
             anchor="rs",
         )
-    charts_top = top + 106
-    row_height = (bottom - pad + 4 - charts_top) / len(PERIODS)
+    width = (right - left - 2 * pad) / len(PERIODS)
     for index, (period, outcome) in enumerate(zip(PERIODS, outcomes)):
-        row_top = charts_top + index * row_height
-        draw.text(
-            (left + pad, row_top + 22),
-            period.label,
-            font=ui.font(17, bold=True),
-            fill=ui.TEXT,
-            anchor="ls",
-        )
-        if isinstance(outcome, SourceError):
-            text, color = failure(outcome)
-            draw.text(
-                (left + pad, row_top + 44),
-                text,
-                font=ui.font(13),
-                fill=color,
-                anchor="ls",
-            )
-            continue
-        draw.text(
-            (left + pad, row_top + 44),
-            sources.br_percent(outcome.change),
-            font=ui.font(14, bold=True),
-            fill=ui.trend_color(outcome.change),
-            anchor="ls",
-        )
-        quote_chart(
+        change_cell(
             draw,
-            (left + pad + 74, row_top + 4, right - pad, row_top + row_height - 8),
+            left + pad + index * width,
+            bottom - 20,
+            period.label,
             outcome,
+            ui.font(16, bold=True),
         )
 
 
 def chart_columns(left: float, right: float) -> tuple[float, list[float], float]:
     """Where the price ends and the three charts start, and how wide each chart is."""
-    price_right = left + min(
-        270, round((right - left) * 0.52)
-    )  # narrower in a half-width column
+    price_right = left + min(230, round((right - left) * 0.45))
     gap = 12
     width = (right - (price_right + 18) - 2 * gap) / len(PERIODS)
     return (
@@ -323,7 +314,7 @@ def chart_columns(left: float, right: float) -> tuple[float, list[float], float]
     )
 
 
-NARROW_CHART = 90  # below this a caption cannot hold "1d -0,17%": the card header names the windows
+NARROW_CELL = 110  # below this a cell cannot hold "1d ▲ -0,17%": the card header names the windows
 
 
 def draw_quote_rows(
@@ -334,11 +325,12 @@ def draw_quote_rows(
     now: datetime,
     row_height: int,
 ) -> None:
-    """Name, price and three captioned mini charts per quote, inside an existing card."""
+    """Name, price and the 1d/1w/1m changes per quote, inside an existing card."""
     left, top, right, _ = box
-    price_right, chart_lefts, chart_width = chart_columns(left, right)
-    narrow = chart_width < NARROW_CHART
-    caption_font = ui.font(12 if narrow else 13, bold=True, condensed=True)
+    price_right, cell_lefts, cell_width = chart_columns(left, right)
+    narrow = cell_width < NARROW_CELL  # the card header names the windows instead
+    two_lines = row_height >= TWO_LINE_ROW
+    middle = 22 if two_lines else row_height / 2 + 6
     for row, quote in enumerate(quotes):
         row_top = top + row * row_height
         ui.stripe(
@@ -347,61 +339,37 @@ def draw_quote_rows(
         outcomes = found.get(quote.symbol, missing_outcomes(found))
         day = outcomes[0]
         draw.text(
-            (left, row_top + 22),
-            ui.fit(quote.label, ui.font(17, bold=True), price_right - left - 100),
+            (left, row_top + middle),
+            ui.fit(quote.label, ui.font(17, bold=True), price_right - left - 80),
             font=ui.font(17, bold=True),
             fill=ui.TEXT,
             anchor="ls",
         )
-        if isinstance(day, SourceError):
-            text, color = failure(day)
+        if not isinstance(day, SourceError):
             draw.text(
-                (left, row_top + 42), text, font=ui.font(13), fill=color, anchor="ls"
-            )
-        else:
-            draw.text(
-                (left, row_top + 42),
-                old_quote_note(day, now),
-                font=ui.font(13),
-                fill=ui.DIM,
-                anchor="ls",
-            )
-            draw.text(
-                (price_right, row_top + 24),
+                (price_right, row_top + middle),
                 sources.br_number(day.price * quote.scale),
-                font=ui.font(20, bold=True),
+                font=ui.font(19, bold=True),
                 fill=ui.TEXT,
                 anchor="rs",
             )
-        for period, outcome, chart_left in zip(PERIODS, outcomes, chart_lefts):
-            prefix = "" if narrow else f"{period.label} "
-            if isinstance(outcome, SourceError):
-                pending = outcome is LOADING
-                draw.text(
-                    (chart_left, row_top + 16),
-                    f"{prefix}{'…' if pending else '✘'}",
-                    font=caption_font,
-                    fill=ui.DIM if pending else ui.RED,
-                    anchor="ls",
-                )
-                continue
-            stale = " ✘" if outcome.stale else ""
-            draw.text(
-                (chart_left, row_top + 14),
-                f"{prefix}{sources.br_percent(outcome.change)}{stale}",
-                font=caption_font,
-                fill=ui.trend_color(outcome.change),
-                anchor="ls",
+        if two_lines:
+            text, color = (
+                failure(day)
+                if isinstance(day, SourceError)
+                else (old_quote_note(day, now), ui.DIM)
             )
-            quote_chart(
+            draw.text(
+                (left, row_top + 42), text, font=ui.font(13), fill=color, anchor="ls"
+            )
+        for period, outcome, cell_left in zip(PERIODS, outcomes, cell_lefts):
+            change_cell(
                 draw,
-                (
-                    chart_left,
-                    row_top + 18,
-                    chart_left + chart_width,
-                    row_top + row_height - 6,
-                ),
+                cell_left,
+                row_top + middle,
+                "" if narrow else period.label,
                 outcome,
+                ui.font(15, bold=True, condensed=narrow),
             )
 
 
@@ -429,7 +397,7 @@ def draw_quote_card(
         if column:
             ui.divider(draw, column_left - column_gap / 2, top + 48, bottom - 10)
         _, chart_lefts, chart_width = chart_columns(column_left, column_left + width)
-        if chart_width < NARROW_CHART:
+        if chart_width < NARROW_CELL:
             for period, chart_left in zip(PERIODS, chart_lefts):
                 draw.text(
                     (chart_left, top + 30),
@@ -447,56 +415,6 @@ def draw_quote_card(
             now,
             row_height,
         )
-
-
-def ticker_story(stories: list[Story], now: datetime) -> Story | None:
-    """A different recent story every TICKER_STEP_SECONDS, cycling through the newest TICKER_STORIES."""
-    recent = sorted(stories, key=lambda s: s.published, reverse=True)[:TICKER_STORIES]
-    if not recent:
-        return None
-    return recent[int(now.timestamp() // TICKER_STEP_SECONDS) % len(recent)]
-
-
-def draw_ticker(
-    draw, box: tuple, stories: list[Story], feeds: tuple[Feed, ...], now: datetime
-) -> None:
-    left, top, right, bottom = box
-    draw.rounded_rectangle(box, radius=10, fill=ui.CARD)
-    baseline = bottom - 13
-    x = left + 16
-    draw.text(
-        (x, baseline),
-        "TECNOLOGIA",
-        font=ui.font(15, bold=True),
-        fill=ui.AMBER,
-        anchor="ls",
-    )
-    x += ui.font(15, bold=True).getlength("TECNOLOGIA") + 18
-    story = ticker_story(stories, now)
-    if story is None:
-        draw.text(
-            (x, baseline), "sem notícias", font=ui.font(16), fill=ui.DIM, anchor="ls"
-        )
-        return
-    ui.badge(
-        draw,
-        x,
-        baseline - 6,
-        story.feed.letter,
-        ui.feed_colors(feeds).get(story.feed.letter, ui.DIM),
-    )
-    x += 28
-    meta = f"{story.feed.label} · {sources.clock(story.published, now)} · {sources.short_age(now - story.published)}"
-    meta_font, title_font = ui.font(15, condensed=True), ui.font(18, condensed=True)
-    draw.text((x, baseline), meta, font=meta_font, fill=ui.DIM, anchor="ls")
-    x += meta_font.getlength(meta) + 16
-    draw.text(
-        (x, baseline),
-        ui.fit(story.title, title_font, right - 16 - x),
-        font=title_font,
-        fill=ui.TEXT,
-        anchor="ls",
-    )
 
 
 def split_columns(box: tuple, count: int, band: tuple | None = None) -> list[tuple]:
@@ -556,8 +474,7 @@ class MarketPage(ui.Page):
         ),
     )
 
-    def __init__(self, news: NewsCache) -> None:
-        self.news = news
+    def __init__(self) -> None:
         self.highlights, self.stocks = HIGHLIGHTS, BRAZIL_STOCKS
         self.found: dict[str, list[Outcome]] = {}
         self.quote_problems: list[str] = []
@@ -582,10 +499,9 @@ class MarketPage(ui.Page):
 
     def refresh(self, now: datetime) -> None:
         self.found, self.quote_problems = gather_quotes(self.quotes, now)
-        self.news.refresh(now)
 
     def problems(self) -> list[str]:
-        return self.quote_problems + self.news.problems
+        return self.quote_problems
 
     def status_items(self, now: datetime) -> list[tuple[str, str, tuple]]:
         return chips(self.found, MARKET_CHIPS, now)
@@ -600,43 +516,50 @@ class MarketPage(ui.Page):
             draw_highlight(
                 draw, column, quote, self.found.get(quote.symbol, loading), now
             )
+        rows = -(-len(self.stocks) // 3) or 1
         draw_quote_card(
             draw,
-            (left, top + STOCKS_BAND[0], right, top + STOCKS_BAND[1]),
+            (left, top + STOCKS_TOP, right, bottom),
             "Ações",
             self.stocks,
             self.found,
             now,
             columns=3,
+            row_height=min(
+                60, int((bottom - top - STOCKS_TOP - CARD_HEADER - 12) / rows)
+            ),
         )
-        world, market = split_columns(box, 2, NEWS_BAND)
-        news = self.news
-        stories, feeds, words = news.stories, news.feeds, news.watch_words
-        ui.news_list(
+
+    def draw_compact(
+        self, draw: ImageDraw.ImageDraw, box: tuple, now: datetime
+    ) -> None:
+        """A narrow column beside the rates: the highlights, then the stocks, one per line."""
+        left, top, right, bottom = box
+        count = len(self.highlights) + len(self.stocks)
+        cards = 2 if self.stocks else 1
+        row = int(
+            (bottom - top - cards * (CARD_HEADER + 12) - ui.GUTTER) / max(count, 1)
+        )
+        split = top + CARD_HEADER + 12 + len(self.highlights) * row
+        draw_quote_card(
             draw,
-            world,
-            "Brasil e mundo",
-            feeds.get("world", ()),
-            stories.get("world", []),
+            (left, top, right, split),
+            "Destaques",
+            self.highlights,
+            self.found,
             now,
-            words,
+            row_height=row,
         )
-        ui.news_list(
-            draw,
-            market,
-            "Mercado",
-            feeds.get("market", ()),
-            stories.get("market", []),
-            now,
-            words,
-        )
-        draw_ticker(
-            draw,
-            (left, top + TICKER_BAND[0], right, top + TICKER_BAND[1]),
-            stories.get("tech", []),
-            feeds.get("tech", ()),
-            now,
-        )
+        if self.stocks:
+            draw_quote_card(
+                draw,
+                (left, split + ui.GUTTER, right, bottom),
+                "Ações",
+                self.stocks,
+                self.found,
+                now,
+                row_height=row,
+            )
 
 
 class WorldMarketPage(ui.Page):
@@ -697,17 +620,7 @@ def selftest() -> Image.Image:
         stale=True,
         session=(now + timedelta(hours=1), now + timedelta(hours=8)),
     )
-    news = NewsCache(
-        lambda feeds: (
-            [
-                Story(now - timedelta(minutes=i), f"{feed.label} {i}", feed)
-                for i, feed in enumerate(feeds * 6)
-            ],
-            [],
-        )
-    )
-    news.refresh(now)
-    page = MarketPage(news)
+    page = MarketPage()
     page.found = {
         quote.symbol: [rising, yesterday, SourceError("sem dados")]
         for quote in page.quotes
@@ -716,21 +629,20 @@ def selftest() -> Image.Image:
         yesterday, now
     ).startswith("último pregão 22/10")
     assert change_text(yesterday) == "▼ -3,85% ✘"
-    first = ticker_story(news.stories["tech"], now)
-    assert first is not None and first != ticker_story(
-        news.stories["tech"], now + timedelta(seconds=TICKER_STEP_SECONDS)
-    )
-    assert ticker_story([], now) is None
     assert failure(missing_outcomes({})[0]) == ("carregando…", ui.DIM), (
         "nothing fetched yet is not an error"
     )
     assert chips({}, MARKET_CHIPS, now)[0] == ("B3", "carregando…", ui.DIM)
+    assert movement(0.0178) == ("▲ +1,78%", ui.GREEN) and movement(-0.0147)[1] == ui.RED
+    assert movement(0.00001) == ("■ +0,00%", ui.DIM), (
+        "a change that shows as 0,00% gets no arrow"
+    )
     assert failure(missing_outcomes({"X": []})[0]) == ("✘ sem dados", ui.RED), (
         "fetched but missing is"
     )
     assert len(BRAZIL_STOCKS) == 11 and len({q.symbol for q in page.quotes}) == 15
     assert all(symbol in {q.symbol for q in page.quotes} for _, symbol in MARKET_CHIPS)
-    custom = MarketPage(news)
+    custom = MarketPage()
     custom.apply_settings(
         fields.read_all(
             MarketPage.settings_fields,
@@ -777,8 +689,9 @@ def selftest() -> Image.Image:
         found["^RUT"][0], SourceError
     )
 
+    page.draw(ImageDraw.Draw(Image.new("RGB", (1888, 992))), (0, 0, 1888, 992), now)
     image = Image.new("RGB", (1888, 992), ui.BACKGROUND)
-    page.draw(ImageDraw.Draw(image), (0, 0, 1888, 992), now)
+    page.draw_compact(ImageDraw.Draw(image), (0, 0, 560, 992), now)  # beside the rates
     world = WorldMarketPage()
     world.found = {
         quote.symbol: [rising, yesterday, rising] for quote in WorldMarketPage.QUOTES

@@ -49,6 +49,10 @@ SGS = {  # key -> (series number, days of history)
     "inpc": (188, 760),
     "savings": (196, 760),
     "tr": (7811, 760),
+    "euro": (21619, 40),  # PTAX sale
+    "reserves": (13621, 40),  # US$ million, daily
+    "debt": (13762, 400),  # general government gross debt, % of GDP
+    "ibcbr": (24364, 400),  # economic activity index, seasonally adjusted
 }
 SIDRA = {
     "jobless": "t/6381/n1/all/v/4099/p/last%2012",  # PNAD: unemployment, rolling quarter
@@ -82,6 +86,9 @@ COMPACT_ROWS = (
     "IPCA+",
 )
 # J23: the only free daily series (IPEA, JPM366_EMBI366) stopped on 2024-07-30; shown as a note, not a number.
+TABLE_WIDTH = 780
+CURVE_HEIGHT = 260
+CREDIT_HEIGHT = 262  # 7 credit lines
 RISK_NOTE = "Risco-Brasil (EMBI): a série pública do IPEA parou em 30/07/2024"
 
 Points = tuple[tuple[date, float], ...]
@@ -293,7 +300,7 @@ def build_rows(
 
 
 def draw_rows(draw, box: tuple, title: str, rows: list[Row]) -> None:
-    """Name, value and four captioned mini charts (1d, 1w, 1m, 1y) per line."""
+    """Name, value and the change over 1d, 1w, 1m and 1y per line, as numbers with an arrow."""
     left, top, right, bottom = box
     ui.card(draw, box, title)
     if not rows:
@@ -306,10 +313,21 @@ def draw_rows(draw, box: tuple, title: str, rows: list[Row]) -> None:
         )
         return
     height = (bottom - top - 46) / len(rows)
-    value_right = left + 330
-    gap = 12
-    cell = (right - 16 - (value_right + 16) - 3 * gap) / 4
-    caption_font = ui.font(13, bold=True, condensed=True)
+    value_right = left + 310
+    cell = (right - 16 - (value_right + 24)) / 4
+    label_face, value_face = ui.font(13), ui.font(16, bold=True, condensed=True)
+    narrow = (
+        cell < 130
+    )  # "1y ▼ -1,25 p.p." does not fit: the windows go in the header once
+    if narrow:
+        for column, label in enumerate(("1d", "1w", "1m", "1y")):
+            draw.text(
+                (value_right + 24 + column * cell, top + 32),
+                label,
+                font=ui.font(13, bold=True),
+                fill=ui.DIM,
+                anchor="ls",
+            )
     for index, row in enumerate(rows):
         y = top + 46 + index * height
         ui.stripe(draw, (left + 8, y, right - 8, y + height - 2), index)
@@ -335,23 +353,30 @@ def draw_rows(draw, box: tuple, title: str, rows: list[Row]) -> None:
             anchor="rs",
         )
         for column, window in enumerate(row.windows):
-            x = value_right + 16 + column * (cell + gap)
-            color = (
-                ui.DIM
-                if window.change is None
-                else ui.trend_color(round(window.change, 4))
-            )
-            draw.text(
-                (x, y + 16), window.caption, font=caption_font, fill=color, anchor="ls"
-            )
-            if len(window.points) > 1:
-                ui.line_chart(
-                    draw,
-                    (x, y + 20, x + cell, y + height - 6),
-                    window.points,
-                    color,
-                    fill=0.18,
+            x = value_right + 24 + column * cell
+            baseline = y + height / 2 + 6
+            if not narrow:
+                draw.text(
+                    (x, baseline),
+                    window.label,
+                    font=label_face,
+                    fill=ui.DIM,
+                    anchor="ls",
                 )
+                x += label_face.getlength(window.label) + 6
+            if window.change is None:
+                draw.text((x, baseline), "—", font=value_face, fill=ui.DIM, anchor="ls")
+                continue
+            change = round(
+                window.change, 2
+            )  # the arrow follows the number shown (2 decimals)
+            draw.text(
+                (x, baseline),
+                f"{ui.arrow(change)} {signed(window.change, window.unit)}",
+                font=value_face,
+                fill=ui.trend_color(change),
+                anchor="ls",
+            )
 
 
 def draw_curve(draw, box: tuple, tesouro: Tesouro | None, error: str) -> None:
@@ -441,7 +466,10 @@ def draw_curve(draw, box: tuple, tesouro: Tesouro | None, error: str) -> None:
 
 def draw_credit(draw, box: tuple, credit: Credit | None, error: str) -> None:
     left, top, right, bottom = box
-    ui.card(draw, box, "Juros do crédito (pessoa física)")
+    narrow = right - left < 700
+    ui.card(
+        draw, box, "Juros do crédito" if narrow else "Juros do crédito (pessoa física)"
+    )
     if credit is None:
         draw.text(
             (left + 16, top + 80),
@@ -453,7 +481,9 @@ def draw_credit(draw, box: tuple, credit: Credit | None, error: str) -> None:
         return
     draw.text(
         (right - 16, top + 30),
-        f"mediana dos bancos · semana de {credit.week:%d/%m}",
+        f"pessoa física · semana de {credit.week:%d/%m}"
+        if narrow
+        else f"mediana dos bancos · semana de {credit.week:%d/%m}",
         font=ui.font(13),
         fill=ui.DIM,
         anchor="rs",
@@ -462,7 +492,11 @@ def draw_credit(draw, box: tuple, credit: Credit | None, error: str) -> None:
     if not rows:
         return
     height = (bottom - top - 66) / len(rows)
-    columns = (right - 270, right - 140, right - 16)
+    columns = (
+        (right - 250, right - 128, right - 16)
+        if narrow
+        else (right - 270, right - 140, right - 16)
+    )
     for header, x in zip(("ao ano", "em 1 mês", "em 1 ano"), columns):
         draw.text((x, top + 58), header, font=ui.font(13), fill=ui.DIM, anchor="rs")
     for index, (label, name) in enumerate(rows):
@@ -470,10 +504,11 @@ def draw_credit(draw, box: tuple, credit: Credit | None, error: str) -> None:
         ui.stripe(draw, (left + 8, band + 1, right - 8, band + height - 1), index)
         y = top + 66 + (index + 0.7) * height
         now = credit.now[name]
+        name_face = ui.font(15 if narrow else 16, bold=True, condensed=narrow)
         draw.text(
             (left + 16, y),
-            label,
-            font=ui.font(16, bold=True),
+            ui.fit(label, name_face, columns[0] - left - 90),  # 70 px for "476,3%"
+            font=name_face,
             fill=ui.TEXT,
             anchor="ls",
         )
@@ -533,7 +568,7 @@ def build_metrics(series: dict[str, Points], sidra: dict, focus: dict) -> list[M
         metrics.append(
             Metric(
                 "Poupança",
-                percent(monthly) + " ao mês",
+                percent(monthly) + " a.m.",
                 f"cerca de {percent(((1 + monthly / 100) ** 12 - 1) * 100)} ao ano",
             )
         )
@@ -541,7 +576,7 @@ def build_metrics(series: dict[str, Points], sidra: dict, focus: dict) -> list[M
         metrics.append(
             Metric(
                 "TR",
-                percent(series["tr"][-1][1]) + " ao mês",
+                percent(series["tr"][-1][1]) + " a.m.",
                 month_label(series["tr"][-1][0]),
             )
         )
@@ -554,10 +589,71 @@ def build_metrics(series: dict[str, Points], sidra: dict, focus: dict) -> list[M
             Metric(
                 "PIB",
                 signed(value, "%").replace(" %", "%"),
-                f"{period}, contra o ano anterior",
+                f"{period} x ano anterior",
+            )
+        )
+    if "ipca_month" in series:
+        this_year_months = [
+            p
+            for p in series["ipca_month"]
+            if p[0].year == series["ipca_month"][-1][0].year
+        ]
+        last = this_year_months[-1][0]
+        metrics.append(
+            Metric(
+                "IPCA no ano",
+                percent(compound(tuple(this_year_months), len(this_year_months))),
+                f"jan a {month_label(last)}",
+            )
+        )
+    if "ibcbr" in series and len(series["ibcbr"]) > 1:
+        (_, before), (day, now_value) = series["ibcbr"][-2:]
+        metrics.append(
+            Metric(
+                "IBC-Br",
+                signed((now_value / before - 1) * 100, "%").replace(" %", "%"),
+                f"atividade no mês · {month_label(day)}",
+            )
+        )
+    if "debt" in series:
+        day, value = series["debt"][-1]
+        metrics.append(
+            Metric(
+                "Dívida bruta",
+                percent(value, 1),
+                f"do PIB, governo geral · {month_label(day)}",
+            )
+        )
+    if "euro" in series:
+        day, value = series["euro"][-1]
+        metrics.append(
+            Metric(
+                "Euro (PTAX)",
+                "R$ " + f"{value:.4f}".replace(".", ","),
+                f"em {day:%d/%m}",
+            )
+        )
+    if "reserves" in series:
+        day, value = series["reserves"][-1]
+        metrics.append(
+            Metric(
+                "Reservas",
+                f"US$ {value / 1000:.0f} bi",
+                f"internacionais · em {day:%d/%m}",
             )
         )
     this_year = str(date.today().year)
+    next_year = str(date.today().year + 1)
+    for indicator, label in (("Selic", "Focus: Selic"), ("IPCA", "Focus: IPCA")):
+        points = focus.get((indicator, next_year))
+        if points:
+            metrics.append(
+                Metric(
+                    f"{label} {next_year}",
+                    percent(points[-1][1]),
+                    f"esperado para o fim de {next_year}",
+                )
+            )
     for indicator, label, text in (
         ("PIB Total", "Focus: PIB", lambda v: percent(v)),
         ("Câmbio", "Focus: dólar", lambda v: "R$ " + f"{v:.2f}".replace(".", ",")),
@@ -575,24 +671,35 @@ def build_metrics(series: dict[str, Points], sidra: dict, focus: dict) -> list[M
 def draw_metrics(draw, box: tuple, metrics: list[Metric]) -> None:
     left, top, right, bottom = box
     ui.card(draw, box, "Mais indicadores")
-    half = (right - left) / 2
-    rows = -(-len(metrics) // 2) or 1
+    columns = 3 if right - left >= 900 else 2
+    half = (right - left) / columns  # width of one tile column
+    rows = -(-len(metrics) // columns) or 1
     height = (bottom - top - 76) / rows
     for index, metric in enumerate(metrics):
-        column, row = index % 2, index // 2
+        column, row = index % columns, index // columns
         x = left + 16 + column * half
         y = top + 46 + row * height
         # One tile per metric: two columns of label ... value would pair a value with the next label.
         draw.rounded_rectangle(
             (x - 8, y + 2, x + half - 24, y + height - 4), radius=6, fill=ui.STRIPE
         )
-        draw.text((x, y + 20), metric.label, font=ui.font(15), fill=ui.DIM, anchor="ls")
+        value_face = ui.font(18, bold=True)
         draw.text(
             (x + half - 32, y + 20),
             metric.value,
-            font=ui.font(18, bold=True),
+            font=value_face,
             fill=ui.TEXT,
             anchor="rs",
+        )
+        room = (
+            half - 52 - value_face.getlength(metric.value)
+        )  # the label never runs into the value
+        draw.text(
+            (x, y + 20),
+            ui.fit(metric.label, ui.font(15), room),
+            font=ui.font(15),
+            fill=ui.DIM,
+            anchor="ls",
         )
         draw.text(
             (x, y + 38),
@@ -719,29 +826,37 @@ class RatesPage(ui.Page):
 
     def draw(self, draw: ImageDraw.ImageDraw, box: tuple, now: datetime) -> None:
         left, top, right, bottom = box
-        split = left + round((right - left) * 0.57)
+        # The table needs ~780 px for name, value and four change columns; the rest goes right.
+        split = left + max(
+            round((right - left) * 0.5), min(TABLE_WIDTH, right - left - 520)
+        )
         draw_rows(
             draw,
             (left, top, split, bottom),
-            "Juros, câmbio e expectativas",
+            "Juros, câmbio e expectativas" if split - left > 900 else "Juros e câmbio",
             self.rows(),
         )
         column = split + ui.GUTTER
         draw_curve(
             draw,
-            (column, top, right, top + 330),
+            (column, top, right, top + CURVE_HEIGHT),
             self.tesouro,
             self.errors.get("tesouro", ""),
         )
         draw_credit(
             draw,
-            (column, top + 342, right, top + 642),
+            (
+                column,
+                top + CURVE_HEIGHT + ui.GUTTER,
+                right,
+                top + CURVE_HEIGHT + ui.GUTTER + CREDIT_HEIGHT,
+            ),
             self.credit,
             self.errors.get("credito", ""),
         )
         draw_metrics(
             draw,
-            (column, top + 654, right, bottom),
+            (column, top + CURVE_HEIGHT + CREDIT_HEIGHT + 2 * ui.GUTTER, right, bottom),
             build_metrics(self.series, self.sidra, self.focus),
         )
 
@@ -818,6 +933,7 @@ def selftest() -> Image.Image:
             for i in reversed(range(60))
         ),
         ("PIB Total", str(today.year)): ((today, 1.83),),
+        ("IPCA", str(today.year + 1)): ((today, 4.1),),
     }
     page = RatesPage()
     page.series = {
@@ -830,6 +946,15 @@ def selftest() -> Image.Image:
         "inpc": monthly,
         "savings": monthly,
         "tr": monthly,
+        "ipca_month": (
+            (date(2025, 12, 1), 0.5),
+            (date(2026, 1, 1), 0.2),
+            (date(2026, 2, 1), 0.3),
+        ),
+        "ibcbr": ((date(2026, 7, 1), 110.03188), (date(2026, 8, 1), 110.40624)),
+        "debt": ((date(2026, 8, 1), 82.87),),
+        "euro": ((today, 5.6422),),
+        "reserves": ((today, 364960.0),),
     }
     page.sidra = {
         "jobless": (("jun-jul-ago 2026", 5.3),),
@@ -853,6 +978,22 @@ def selftest() -> Image.Image:
     assert "Focus: Selic" in labels and "IPCA-15 12 meses" in labels
     metrics = [m.label for m in build_metrics(page.series, page.sidra, page.focus)]
     assert metrics[0] == "Juro real" and "Focus: PIB" in metrics
+    shown = {
+        m.label: (m.value, m.note)
+        for m in build_metrics(page.series, page.sidra, page.focus)
+    }
+    assert shown["IPCA no ano"][0] == percent(compound(((0, 0.2), (0, 0.3)), 2)), (
+        "only this year's months"
+    )
+    assert shown["IBC-Br"][0] == "+0,34%", shown["IBC-Br"]
+    assert (
+        shown["Dívida bruta"][0] == "82,9%" and shown["Euro (PTAX)"][0] == "R$ 5,6422"
+    )
+    assert shown["Reservas"][0] == "US$ 365 bi"
+    assert (
+        f"Focus: IPCA {today.year + 1}" in shown
+        and f"Focus: Selic {today.year + 1}" not in shown
+    ), "next year's Focus shown only when the survey has it"
 
     def down(*args):
         raise SourceError("demorou demais")
@@ -867,6 +1008,9 @@ def selftest() -> Image.Image:
     failing.refresh(now + timedelta(minutes=1))
     image = Image.new("RGB", (1888, 992), ui.BACKGROUND)
     page.draw(ImageDraw.Draw(image), (0, 0, 1888, 992), now)
+    page.draw(
+        ImageDraw.Draw(Image.new("RGB", (1316, 992))), (0, 0, 1316, 992), now
+    )  # beside the market
     page.draw_compact(
         ImageDraw.Draw(Image.new("RGB", (938, 992))), (0, 0, 938, 992), now
     )

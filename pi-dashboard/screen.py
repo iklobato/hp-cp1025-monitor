@@ -58,7 +58,7 @@ def build_blocks() -> dict[str, ui.Page]:
     news = page_news.NewsCache()
     weather = page_weather.WeatherPage()
     return {
-        "mercado": page_market.MarketPage(news),
+        "mercado": page_market.MarketPage(),
         "mercado_mundo": page_market.WorldMarketPage(),
         "juros": page_rates.RatesPage(),
         "noticias": page_news.NewsPage(news),

@@ -8,9 +8,8 @@ Everything shown, and how long each screen stays, is set on a small web page on 
 
 | Screen | What it shows |
 |---|---|
-| Mercado | 4 big quotes with 1d, 1w and 1m charts; a table of stocks; Brazil and market news; a technology ticker; open/closed marks for B3, NYSE, currencies and crypto |
-| Juros | Selic, CDI, dollar (market and PTAX), US 3m/5y/10y/30y, IPCA and IPCA-15, Focus survey, Tesouro bonds, each with 1d/1w/1m/1y; Tesouro curve now and a year ago; consumer credit rates; more indicators |
-| Notícias | 5 topics, 5 stories each with a photo, a featured story, watched words in amber; a narrow weather column beside it |
+| Mercado e Juros | one screen, split 30/70. Left: 4 highlighted quotes and a list of stocks, each with its 1d, 1w and 1m change as numbers with an arrow (no charts). Right: Selic, CDI, dollar (market and PTAX), US 3m/5y/10y/30y, IPCA and IPCA-15, Focus survey, Tesouro bonds with 1d/1w/1m/1y changes as numbers; the Tesouro curve now and a year ago; consumer credit rates; 16 more indicators (real rate, IGP-M, INPC, savings, TR, jobless, GDP, IPCA this year, IBC-Br, gross debt, euro, reserves, Focus for this year and next); open/closed marks for B3, NYSE, currencies and crypto |
+| Notícias | the only screen with news: 5 topics, 5 stories each with a photo, a featured story, watched words in amber; a narrow weather column beside it |
 | Clima | now, next 24 h, days ahead, rain of the last 7 days, sun and moon; rain radar over a map, INMET alerts, air quality, a second city |
 | Combustível e Loteria | ANP weekly pump prices: 6 fuels with this week against last week, the 3 cheapest stations; every Caixa lottery, biggest next prize first |
 | Impressora e Pi | the printer monitor's verdict, ports, toner, pages, queue, live changes, event log, USB link (from `http://127.0.0.1:8025/api/status`); the Pi every second: cores, clock, memory, disk, network, top processes, services, journal errors, ports, USB |
