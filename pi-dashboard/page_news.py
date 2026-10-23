@@ -21,7 +21,7 @@ WORLD_FEEDS = (
     Feed("G", "g1", "https://g1.globo.com/rss/g1/"),
     Feed("F", "Folha", "https://feeds.folha.uol.com.br/emcimadahora/rss091.xml"),
 )
-REGIONAL_FEEDS = (Feed("R", "g1 São Paulo", "https://g1.globo.com/rss/g1/sao-paulo/"),)
+REGIONAL_FEEDS = (Feed("R", "g1 São Paulo", "https://g1.globo.com/rss/g1/sp/sao-paulo/"),)
 MARKET_FEEDS = (
     Feed("I", "InfoMoney", "https://www.infomoney.com.br/feed/"),
     Feed("M", "Money Times", "https://www.moneytimes.com.br/feed/"),
