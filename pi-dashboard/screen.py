@@ -33,6 +33,7 @@ import page_rates
 import page_system
 import page_weather
 import sources
+import summary
 import ui
 from layout import Plan, Screen
 from PIL import Image, ImageDraw, ImageMath
@@ -511,6 +512,7 @@ def selftest(directory: Path) -> None:
     sources.selftest()
     ui.selftest()
     fields.selftest()
+    summary.selftest()
     layout.selftest()
     admin.selftest()
     directory.mkdir(parents=True, exist_ok=True)

@@ -6,13 +6,17 @@ mundo + Regional, Mercado + Segurança, and a featured story with a large photo 
 Tecnologia. Stories that mention a watched word are highlighted everywhere.
 """
 
+import tempfile
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from dataclasses import dataclass
 from typing import Callable
 
 import fields
 import sources
+import summary
 import ui
 from PIL import Image, ImageDraw
 from sources import Feed, SourceError, Story
@@ -21,7 +25,9 @@ WORLD_FEEDS = (
     Feed("G", "g1", "https://g1.globo.com/rss/g1/"),
     Feed("F", "Folha", "https://feeds.folha.uol.com.br/emcimadahora/rss091.xml"),
 )
-REGIONAL_FEEDS = (Feed("R", "g1 São Paulo", "https://g1.globo.com/rss/g1/sp/sao-paulo/"),)
+REGIONAL_FEEDS = (
+    Feed("R", "g1 São Paulo", "https://g1.globo.com/rss/g1/sp/sao-paulo/"),
+)
 MARKET_FEEDS = (
     Feed("I", "InfoMoney", "https://www.infomoney.com.br/feed/"),
     Feed("M", "Money Times", "https://www.moneytimes.com.br/feed/"),
@@ -64,7 +70,10 @@ COLUMNS = (
 # None by default: each installation sets its own in carrossel.toml ([blocos.noticias]).
 WATCH_WORDS: tuple[str, ...] = ()
 STORIES_PER_FEED = 25
-STORIES_SHOWN = 5
+STORIES_SHOWN = 3  # each card also holds a summary now (2 if they stop fitting)
+SUMMARY_CHARS = (
+    180  # what the model is asked for; the card check below decides what is shown
+)
 THUMB_SIZE = (120, 68)
 FEATURE_SIZE = (436, 245)
 NEWS_MAX_AGE = timedelta(minutes=10)
@@ -123,6 +132,7 @@ class NewsCache:
         gather: Callable = gather_news,
         picture: Callable = sources.thumbnail,
         page_image: Callable[[str], str] | None = None,
+        summaries: summary.Summaries | None = None,
     ) -> None:
         self.gather, self.picture = gather, picture
         self.page_image = page_image or (
@@ -138,6 +148,9 @@ class NewsCache:
             str, str
         ] = {}  # story link -> og:image, so each page is read once
         self.problems: list[str] = []
+        self.summaries = summaries or summary.Summaries()
+        # Set by NewsPage.layout from the real card size; until then every summary "fits".
+        self.fits: Callable[[Story, str], bool] = lambda story, text: True
         self.fetched_at: datetime | None = None
         self.lock = threading.Lock()
 
@@ -160,6 +173,11 @@ class NewsCache:
                 for (topic, _), found in zip(topics, unique)
             }
             self.pictures = self._load_pictures(stories, now)
+            shown = [story for topic in stories.values() for story in newest(topic)]
+            feature = featured_story(stories, now, self.watch_words)
+            if feature is not None and feature not in shown:
+                shown.append(feature)
+            problems += self.summaries.fill(shown, SUMMARY_CHARS, self.fits, now)
             self.stories, self.problems, self.fetched_at = stories, problems, now
             sources.prune_thumbnails(now)
         finally:
@@ -209,33 +227,91 @@ def picture_key(story: Story, size: tuple) -> tuple[str, tuple]:
     return (story.link or story.title, size)
 
 
-def wrap_to_width(text: str, face, width: float, max_lines: int) -> list[str]:
-    """Word-wrap by measured pixels; the last allowed line ends in an ellipsis when text remains."""
-    lines, current = [], ""
-    for word in text.split():
-        candidate = f"{current} {word}".strip()
-        if face.getlength(candidate) <= width:
-            current = candidate
-            continue
-        if current:
-            lines.append(current)
-        current = word
-        if len(lines) == max_lines:
-            break
-    else:
-        if current:
-            lines.append(current)
-        return lines[:max_lines]
-    lines[-1] = (
-        ui.fit(lines[-1] + " " + current, face, width) if lines[-1] else lines[-1]
-    )
-    if not lines[-1].endswith("…"):
-        lines[-1] = ui.fit(lines[-1] + " …", face, width)
+def story_meta(story: Story, now: datetime) -> str:
+    return f"{story.feed.label} · {sources.clock(story.published, now)} · {sources.short_age(now - story.published)}"
+
+
+@dataclass(frozen=True)
+class Part:
+    text: str
+    face: object
+    step: int  # line height
+    color: tuple
+    badge: str = ""  # a feed letter drawn before the first line
+    gap: int = 0  # space before this part
+
+
+@dataclass(frozen=True)
+class Line:
+    x: float
+    baseline: float
+    text: str
+    part: Part
+    first: bool  # the part's first line (where its badge goes)
+
+
+def flow(parts: list[Part], box: tuple, photo: tuple[int, int]) -> list[Line] | None:
+    """Word-wrap the parts in order. Lines beside the photo use what is left of the width,
+    lines below it the whole width. None when the text does not fit the box: callers drop a
+    part instead of cutting text."""
+    left, top, right, bottom = box
+    photo_bottom = top + photo[1]
+    lines, y = [], top
+    for part in parts:
+        y += part.gap
+        words, first = part.text.split(), True
+        while words:
+            x = (
+                left
+                + (photo[0] + 12 if y < photo_bottom else 0)
+                + (24 if part.badge and first else 0)
+            )
+            line, taken = words[0], 1
+            if part.face.getlength(line) > right - x or y + part.step > bottom:
+                return None
+            while (
+                taken < len(words)
+                and part.face.getlength(f"{line} {words[taken]}") <= right - x
+            ):
+                line, taken = f"{line} {words[taken]}", taken + 1
+            lines.append(Line(x, y + part.step - 5, line, part, first))
+            words, y, first = words[taken:], y + part.step, False
     return lines
 
 
-def story_meta(story: Story, now: datetime) -> str:
-    return f"{story.feed.label} · {sources.clock(story.published, now)} · {sources.short_age(now - story.published)}"
+def card_parts(story: Story, text: str, now: datetime, watched: bool) -> list[Part]:
+    title_face = (
+        ui.font(17, bold=True, condensed=True)
+        if watched
+        else ui.font(17, condensed=True)
+    )
+    parts = [
+        Part(story.title, title_face, 21, ui.AMBER if watched else ui.TEXT),
+        Part(
+            story_meta(story, now),
+            ui.font(14, condensed=True),
+            20,
+            ui.DIM,
+            badge=story.feed.letter,
+        ),
+    ]
+    if text:
+        parts.append(Part(text, ui.font(15, condensed=True), 19, SUMMARY_COLOR, gap=4))
+    return parts
+
+
+SUMMARY_COLOR = ui.blend(ui.TEXT, ui.CARD, 0.8)
+
+
+def card_fits(story: Story, text: str, size: tuple[int, int]) -> bool:
+    """Title, source line and summary all fit the card uncut."""
+    box = (0, 0, size[0], size[1])
+    return (
+        flow(
+            card_parts(story, text, datetime.now(timezone.utc), False), box, THUMB_SIZE
+        )
+        is not None
+    )
 
 
 def draw_story(
@@ -247,8 +323,9 @@ def draw_story(
     color: tuple,
     now: datetime,
     watch_words: tuple[str, ...],
+    summary_text: str = "",
 ) -> None:
-    """One row: photo on the left, title in up to two lines, then the source and time."""
+    """One card: photo on the left, then title, source and summary flowing around it, uncut."""
     left, top, right, bottom = box
     watched = story.mentions(watch_words)
     if watched:
@@ -272,30 +349,32 @@ def draw_story(
             fill=color,
             anchor="mm",
         )
-    text_left = left + THUMB_SIZE[0] + 12
-    face = (
-        ui.font(17, bold=True, condensed=True)
-        if watched
-        else ui.font(17, condensed=True)
-    )
-    for index, line in enumerate(
-        wrap_to_width(story.title, face, right - text_left, max_lines=2)
-    ):
+    for text in (
+        summary_text,
+        "",
+    ):  # with the summary when it fits, else title and source only
+        lines = flow(card_parts(story, text, now, watched), box, THUMB_SIZE)
+        if lines is not None:
+            break
+    if lines is None:  # not even the title fits: a layout bug, never cut silently
         draw.text(
-            (text_left, top + 17 + index * 21),
-            line,
-            font=face,
-            fill=ui.AMBER if watched else ui.TEXT,
+            (left + THUMB_SIZE[0] + 12, top + 17),
+            "texto não coube",
+            font=ui.font(14),
+            fill=ui.RED,
             anchor="ls",
         )
-    ui.badge(draw, text_left, top + 63, story.feed.letter, color)
-    draw.text(
-        (text_left + 24, top + 68),
-        story_meta(story, now),
-        font=ui.font(14, condensed=True),
-        fill=ui.DIM,
-        anchor="ls",
-    )
+        return
+    for line in lines:
+        if line.part.badge and line.first:
+            ui.badge(draw, line.x - 24, line.baseline - 5, line.part.badge, color)
+        draw.text(
+            (line.x, line.baseline),
+            line.text,
+            font=line.part.face,
+            fill=line.part.color,
+            anchor="ls",
+        )
 
 
 def draw_block(
@@ -334,6 +413,7 @@ def draw_block(
             colors.get(story.feed.letter, ui.DIM),
             now,
             news.watch_words,
+            news.summaries.text(story),
         )
 
 
@@ -345,6 +425,7 @@ def draw_feature(
     pictures: dict,
     now: datetime,
     watch_words: tuple[str, ...],
+    summary_text: str = "",
 ) -> None:
     left, top, right, bottom = box
     ui.card(draw, box)
@@ -381,25 +462,30 @@ def draw_feature(
         crop = picture.crop((0, 0, width, height))
         image.paste(crop, (int(left + 16), int(photo_top)))
         photo_height = height + 12
-    face = ui.font(21, bold=True, condensed=True)
-    y = photo_top + photo_height + 22
-    for line in wrap_to_width(story.title, face, right - left - 32, max_lines=2):
+    area = (left + 16, photo_top + photo_height + 4, right - 16, bottom - 8)
+    title = Part(
+        story.title,
+        ui.font(21, bold=True, condensed=True),
+        26,
+        ui.AMBER if watched else ui.TEXT,
+    )
+    lines = None
+    for parts in (
+        [title, Part(summary_text, ui.font(15), 20, SUMMARY_COLOR, gap=6)],
+        [title],
+    ):
+        if parts[-1].text:
+            lines = flow(parts, area, (0, 0))
+            if lines is not None:
+                break
+    for line in lines or ():
         draw.text(
-            (left + 16, y),
-            line,
-            font=face,
-            fill=ui.AMBER if watched else ui.TEXT,
+            (line.x, line.baseline),
+            line.text,
+            font=line.part.face,
+            fill=line.part.color,
             anchor="ls",
         )
-        y += 26
-    for line in wrap_to_width(
-        story.summary,
-        ui.font(15),
-        right - left - 32,
-        max_lines=max(int((bottom - y) // 20), 0),
-    ):
-        draw.text((left + 16, y + 4), line, font=ui.font(15), fill=ui.DIM, anchor="ls")
-        y += 20
 
 
 class NewsPage(ui.Page):
@@ -465,6 +551,14 @@ class NewsPage(ui.Page):
     def problems(self) -> list[str]:
         return self.news.problems
 
+    def layout(self, box: tuple, mode: str) -> None:
+        """The card size decides which summaries fit (see compose for the same arithmetic)."""
+        left, top, right, bottom = box
+        width = (right - left - 2 * ui.GUTTER) / 3
+        block_height = (bottom - top - ui.GUTTER) / 2
+        card = (int(width - 28), int((block_height - 46) / STORIES_SHOWN))
+        self.news.fits = lambda story, text: card_fits(story, text, card)
+
     def compose(
         self, image: Image.Image, box: tuple, now: datetime, mode: str = "cheio"
     ) -> None:
@@ -492,6 +586,7 @@ class NewsPage(ui.Page):
                         pictures,
                         now,
                         self.news.watch_words,
+                        self.news.summaries.text(feature) if feature else "",
                     )
                 else:
                     draw_block(
@@ -553,7 +648,12 @@ def selftest() -> Image.Image:
         pages_read.append(link)
         return f"{link}/og.jpg"
 
-    cache = NewsCache(fake_gather, fake_picture, fake_page_image)
+    cache = NewsCache(
+        fake_gather,
+        fake_picture,
+        fake_page_image,
+        summary.Summaries("", Path(tempfile.mkdtemp()) / "s.json"),
+    )
     cache.configure(dict(TOPICS), ("Sorocaba",))
     cache.refresh(now)
     assert (
@@ -568,7 +668,9 @@ def selftest() -> Image.Image:
     assert feature is not None and feature.mentions(cache.watch_words), (
         "a watched story wins over newer ones"
     )
-    settings_cache = NewsCache()  # never refreshed: only its settings are under test
+    settings_cache = NewsCache(
+        summaries=summary.Summaries("", Path(tempfile.mkdtemp()) / "s.json")
+    )  # settings only
     settings_cache.fetched_at = fetched_at = now
     page = NewsPage(settings_cache)
     page.apply_settings(
@@ -620,17 +722,33 @@ def selftest() -> Image.Image:
     cache.fetched_at = None
     cache.refresh(now + timedelta(minutes=1))
     assert len(pages_read) == before_pages, "each page is read for its picture once"
-    face = ui.font(18)
-    wrapped = wrap_to_width("palavra " * 200, face, 300, max_lines=2)
-    assert (
-        len(wrapped) == 2
-        and wrapped[-1].endswith("…")
-        and all(face.getlength(line) <= 300 for line in wrapped)
+    face = ui.font(17, condensed=True)
+    long_title = Part("palavra " * 30, face, 21, ui.TEXT)
+    lines = flow([long_title], (0, 0, 433, 400), THUMB_SIZE)
+    assert lines and lines[0].x == THUMB_SIZE[0] + 12 and lines[-1].x == 0, (
+        "beside the photo, then full width"
     )
-    assert (
-        wrap_to_width("curto", face, 300, max_lines=2) == ["curto"]
-        and wrap_to_width("", face, 300, 2) == []
+    assert all(face.getlength(line.text) <= 433 - line.x for line in lines), (
+        "no line wider than its room"
     )
+    assert " ".join(line.text for line in lines) == long_title.text.strip(), (
+        "every word shown, none cut"
+    )
+    assert flow([long_title], (0, 0, 433, 60), THUMB_SIZE) is None, (
+        "too long for the box: refused, not cut"
+    )
+    meta = Part("g1 · 10:00 · 5m", ui.font(14), 20, ui.DIM, badge="G")
+    assert flow([meta], (0, 0, 433, 100), THUMB_SIZE)[0].x == THUMB_SIZE[0] + 12 + 24, (
+        "room for the badge"
+    )
+    story = Story(now, "Título curto", Feed("G", "g1", "u"))
+    assert card_fits(story, "Resumo de duas frases curtas. Cabe.", (433, 148))
+    assert not card_fits(story, "resumo " * 120, (433, 148)), (
+        "a summary that would be cut is not shown"
+    )
+    page = NewsPage(cache)
+    page.layout((0, 0, 1407, 992), "cheio")
+    assert cache.fits(story, "Cabe.") and not cache.fits(story, "resumo " * 120)
     assert cache.lock.acquire(blocking=False)
     cache.fetched_at = None
     cache.refresh(now + timedelta(hours=1))

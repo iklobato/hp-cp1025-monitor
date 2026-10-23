@@ -11,6 +11,8 @@ WorkingDirectory=/home/iklo
 # glibc gives each thread its own heap; with refreshes on many threads the RSS grew
 # ~300 MB an hour on 2026-10-23 (306 to 598 MB in 55 min) without coming back.
 Environment=MALLOC_ARENA_MAX=2
+# OPENROUTER_API_KEY for the news summaries; root-only file, never in the repo.
+EnvironmentFile=-/etc/pi-dashboard/openrouter.env
 ExecStart=/usr/bin/python3 /home/iklo/dashboard/screen.py run
 StandardInput=tty
 StandardOutput=journal
