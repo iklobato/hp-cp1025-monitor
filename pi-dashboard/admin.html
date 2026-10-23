@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel da Pi</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --line: #3c444e; --dim: #8b949e; --text: #e6edf3;
+    --blue: #58a6ff; --green: #3fb950; --red: #f85149; --amber: #d29922;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  h2 { font-size: 17px; margin: 0 0 10px; }
+  p.help { color: var(--dim); margin: 0 0 14px; }
+  section, .screen { background: var(--card); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .screen { border: 1px solid var(--line); }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 8px; }
+  label { display: flex; flex-direction: column; gap: 3px; color: var(--dim); font-size: 13px; }
+  input, select, button { font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  input[type=number] { width: 96px; }
+  input.name { width: 240px; max-width: 100%; }
+  button { cursor: pointer; }
+  button:hover, button:focus-visible { border-color: var(--blue); outline: none; }
+  button.primary { background: var(--blue); color: var(--bg); border-color: var(--blue); font-weight: 600; }
+  button.danger { color: var(--red); }
+  .parts { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
+  .part { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; padding: 6px; border-radius: 6px; }
+  .part:nth-child(odd) { background: #1e242d; }
+  .data { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .bar { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0; display: flex;
+    gap: 10px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--line); }
+  #status { flex: 1; min-width: 200px; }
+  .settings { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+  .settings:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+  .settings h3 { font-size: 15px; margin: 0 0 8px; }
+  .setting { margin-bottom: 12px; }
+  .setting > .help { color: var(--dim); font-size: 13px; margin: 2px 0 6px; }
+  textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; width: 320px; max-width: 100%; min-height: 90px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+  .checks label { flex-direction: row; align-items: center; color: var(--text); font-size: 15px; }
+  .grid { display: grid; gap: 6px; }
+  .grid-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; padding: 6px; border-radius: 6px; }
+  .grid-row:nth-child(odd) { background: #1e242d; }
+  .grid-row input.wide { width: 360px; max-width: 100%; }
+  .grid-row input.letter { width: 48px; text-align: center; }
+  .ok { color: var(--green); } .error { color: var(--red); } .dim { color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Painel da Pi</h1>
+  <p class="help">Telas do carrossel, tempos e blocos. Tempos em segundos. Ao salvar, vale a partir da próxima troca de tela.</p>
+
+  <section>
+    <h2>Padrão</h2>
+    <p class="help">Usado pelas telas que deixam o campo vazio.</p>
+    <div class="row">
+      <label>Tempo de cada tela<input type="number" min="1" step="1" id="padrao-na_tela"></label>
+      <label>Redesenho da tela inteira<input type="number" min="1" step="1" id="padrao-redesenho"></label>
+    </div>
+  </section>
+
+  <section>
+    <h2>Telas</h2>
+    <p class="help">Na ordem em que aparecem. Cada tela mostra um ou mais blocos, lado a lado ou empilhados; o tamanho é a fatia de cada um.</p>
+    <div id="screens"></div>
+    <button type="button" id="add-screen">+ nova tela</button>
+  </section>
+
+  <section>
+    <h2>Conteúdo dos blocos</h2>
+    <p class="help">O que cada bloco mostra. Mudar a cidade ou as fontes faz o bloco buscar dados novos na hora.</p>
+    <div id="settings"></div>
+  </section>
+
+  <section>
+    <h2>Busca de dados</h2>
+    <p class="help">De quanto em quanto tempo cada bloco busca dados novos. Todo bloco usado numa tela precisa de um valor.</p>
+    <div class="data" id="data"></div>
+  </section>
+
+  <div class="bar">
+    <button type="button" class="primary" id="save">Salvar</button>
+    <button type="button" id="undo">Desfazer mudanças</button>
+    <span id="status" class="dim" role="status" aria-live="polite"></span>
+  </div>
+</main>
+<script>
+let config = null;
+let blocks = [];
+let values = {};
+let params = {};
+
+function element(tag, props = {}, children = []) {
+  const node = Object.assign(document.createElement(tag), props);
+  for (const child of children) node.append(child);
+  return node;
+}
+
+function numberOrEmpty(value) {
+  return value === "" ? "" : Number(value);
+}
+
+function field(label, input) {
+  return element("label", {}, [label, input]);
+}
+
+function numberInput(value, onChange, props = {}) {
+  const input = element("input", { type: "number", min: "0", step: "any", value: value ?? "", ...props });
+  input.addEventListener("input", () => onChange(numberOrEmpty(input.value)));
+  return input;
+}
+
+function select(options, value, onChange) {
+  const node = element("select");
+  for (const [optionValue, text] of options) node.append(element("option", { value: optionValue, textContent: text }));
+  node.value = value;
+  node.addEventListener("change", () => onChange(node.value));
+  return node;
+}
+
+function setOrDrop(target, key, value) {
+  if (value === "" || value === null) delete target[key];
+  else target[key] = value;
+}
+
+function move(list, index, step) {
+  const other = index + step;
+  if (other < 0 || other >= list.length) return;
+  [list[index], list[other]] = [list[other], list[index]];
+  render();
+}
+
+function renderPart(screen, part, index) {
+  const blockOptions = blocks.map(b => [b.id, b.nome + (b.ao_vivo ? " (ao vivo)" : "")]);
+  return element("div", { className: "part" }, [
+    field("Bloco", select(blockOptions, part.bloco, v => { part.bloco = v; render(); })),
+    field("Modo", select([["cheio", "cheio"], ["compacto", "compacto"]], part.modo ?? "cheio", v => { part.modo = v; })),
+    field("Tamanho", numberInput(part.tamanho ?? 1, v => setOrDrop(part, "tamanho", v), { step: "0.05" })),
+    element("button", { type: "button", textContent: "↑", ariaLabel: "subir bloco", onclick: () => move(screen.blocos, index, -1) }),
+    element("button", { type: "button", textContent: "↓", ariaLabel: "descer bloco", onclick: () => move(screen.blocos, index, 1) }),
+    element("button", { type: "button", className: "danger", textContent: "remover bloco",
+      onclick: () => { screen.blocos.splice(index, 1); render(); } }),
+  ]);
+}
+
+function renderScreen(screen, index) {
+  screen.blocos = screen.blocos ?? [];
+  const name = element("input", { className: "name", value: screen.nome ?? "" });
+  name.addEventListener("input", () => { screen.nome = name.value; });
+  const optional = key => numberInput(screen[key], v => setOrDrop(screen, key, v), { min: "1" });
+  const live = numberInput(screen.ao_vivo, v => setOrDrop(screen, "ao_vivo", v), { min: "1", placeholder: "sem" });
+  const parts = element("div", { className: "parts" }, screen.blocos.map((part, i) => renderPart(screen, part, i)));
+  parts.append(element("button", { type: "button", textContent: "+ bloco",
+    onclick: () => { screen.blocos.push({ bloco: blocks[0].id, modo: "cheio", tamanho: 1 }); render(); } }));
+  return element("div", { className: "screen" }, [
+    element("div", { className: "row" }, [
+      field(`Tela ${index + 1}: nome`, name),
+      element("button", { type: "button", textContent: "↑", ariaLabel: "subir tela", onclick: () => move(config.tela, index, -1) }),
+      element("button", { type: "button", textContent: "↓", ariaLabel: "descer tela", onclick: () => move(config.tela, index, 1) }),
+      element("button", { type: "button", className: "danger", textContent: "remover tela",
+        onclick: () => { if (confirm(`Remover a tela "${screen.nome}"?`)) { config.tela.splice(index, 1); render(); } } }),
+    ]),
+    element("div", { className: "row" }, [
+      field("Tempo na tela (vazio = padrão)", optional("na_tela")),
+      field("Redesenho (vazio = padrão)", optional("redesenho")),
+      field("Ao vivo a cada (vazio = sem)", live),
+      field("Divisão", select([["lado", "lado a lado"], ["empilhado", "empilhado"]], screen.divisao ?? "lado",
+        v => { screen.divisao = v; })),
+    ]),
+    parts,
+  ]);
+}
+
+function renderData() {
+  config.dados = config.dados ?? {};
+  const used = new Set(config.tela.flatMap(s => (s.blocos ?? []).map(p => p.bloco)));
+  return blocks.map(b => field(`${b.nome}${used.has(b.id) ? "" : " (fora das telas)"}`,
+    numberInput(config.dados[b.id], v => setOrDrop(config.dados, b.id, v), { min: "1" })));
+}
+
+function settingField(block, field) {
+  const box = element("div", { className: "setting" });
+  const current = values[block];
+  const label = element("label", { textContent: field.rotulo });
+  box.append(label);
+  if (field.ajuda) box.append(element("div", { className: "help", textContent: field.ajuda }));
+  if (field.tipo === "texto") {
+    const input = element("input", { className: "name", value: current[field.chave] ?? "" });
+    input.addEventListener("input", () => { current[field.chave] = input.value; });
+    label.append(input);
+  } else if (field.tipo === "numero" || field.tipo === "decimal") {
+    const input = numberInput(current[field.chave], v => { current[field.chave] = v; },
+      { min: String(field.minimo), max: String(field.maximo), step: field.tipo === "numero" ? "1" : "any" });
+    label.append(input);
+  } else if (field.tipo === "palavras") {
+    const area = element("textarea", { value: (current[field.chave] ?? []).join("\n") });
+    area.addEventListener("input", () => {
+      current[field.chave] = area.value.split("\n").map(w => w.trim()).filter(Boolean);
+    });
+    label.append(area, element("span", { className: "dim", textContent: "uma por linha" }));
+  } else if (field.tipo === "escolhas") {
+    const chosen = new Set(current[field.chave] ?? []);
+    const checks = element("div", { className: "checks" });
+    for (const [option, text] of field.opcoes) {
+      const box = element("input", { type: "checkbox", checked: chosen.has(option) });
+      box.addEventListener("change", () => {
+        if (box.checked) chosen.add(option); else chosen.delete(option);
+        current[field.chave] = field.opcoes.map(o => o[0]).filter(o => chosen.has(o));
+      });
+      checks.append(element("label", {}, [box, text]));
+    }
+    box.append(checks);
+  } else if (field.tipo === "tabela") {
+    box.append(settingTable(current, field));
+  }
+  return box;
+}
+
+function settingTable(current, field) {
+  const rows = current[field.chave] = current[field.chave] ?? [];
+  const grid = element("div", { className: "grid" });
+  rows.forEach((row, index) => {
+    const cells = field.colunas.map(column => {
+      if (column.tipo === "escolha") {
+        return field_(column, select(column.opcoes, row[column.chave], v => { row[column.chave] = v; }));
+      }
+      if (column.tipo === "numero") {
+        return field_(column, numberInput(row[column.chave], v => { row[column.chave] = v; }));
+      }
+      const input = element("input", { value: row[column.chave] ?? "",
+        className: column.tipo === "sigla" ? "letter" : column.tipo === "url" ? "wide" : "" });
+      if (column.tipo === "sigla") input.maxLength = 1;
+      input.addEventListener("input", () => { row[column.chave] = input.value; });
+      return field_(column, input);
+    });
+    grid.append(element("div", { className: "grid-row" }, [
+      ...cells,
+      element("button", { type: "button", textContent: "↑", ariaLabel: "subir", onclick: () => move(rows, index, -1) }),
+      element("button", { type: "button", textContent: "↓", ariaLabel: "descer", onclick: () => move(rows, index, 1) }),
+      element("button", { type: "button", className: "danger", textContent: "remover",
+        onclick: () => { rows.splice(index, 1); render(); } }),
+    ]));
+  });
+  const blank = Object.fromEntries(field.colunas.map(c => [c.chave, c.tipo === "escolha" ? c.opcoes[0][0] : ""]));
+  grid.append(element("button", { type: "button", textContent: "+ linha",
+    onclick: () => { rows.push({ ...blank }); render(); } }));
+  return grid;
+}
+
+function field_(column, input) {
+  return field(column.rotulo, input);
+}
+
+function renderSettings() {
+  return Object.entries(params).map(([block, fieldList]) => {
+    const name = blocks.find(b => b.id === block)?.nome ?? block;
+    return element("div", { className: "settings" }, [
+      element("h3", { textContent: name }),
+      ...fieldList.map(f => settingField(block, f)),
+    ]);
+  });
+}
+
+function render() {
+  config.padrao = config.padrao ?? {};
+  for (const key of ["na_tela", "redesenho"]) {
+    const input = document.getElementById(`padrao-${key}`);
+    input.value = config.padrao[key] ?? "";
+    input.oninput = () => setOrDrop(config.padrao, key, numberOrEmpty(input.value));
+  }
+  config.tela = config.tela ?? [];
+  document.getElementById("screens").replaceChildren(...config.tela.map(renderScreen));
+  document.getElementById("settings").replaceChildren(...renderSettings());
+  document.getElementById("data").replaceChildren(...renderData());
+}
+
+function say(text, kind) {
+  const status = document.getElementById("status");
+  status.textContent = text;
+  status.className = kind;
+}
+
+async function load() {
+  try {
+    const response = await fetch("/api/config");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.mensagem);
+    config = payload.config;
+    blocks = payload.blocos;
+    values = payload.valores;
+    params = payload.parametros;
+    render();
+    say("arquivo atual carregado", "dim");
+  } catch (err) {
+    say(`não consegui carregar: ${err.message}`, "error");
+  }
+}
+
+async function save() {
+  say("salvando…", "dim");
+  try {
+    const response = await fetch("/api/config", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...config, blocos: values }),
+    });
+    const payload = await response.json();
+    say(payload.mensagem, payload.ok ? "ok" : "error");
+  } catch (err) {
+    say(`não salvou: ${err.message}`, "error");
+  }
+}
+
+document.getElementById("add-screen").onclick = () => {
+  config.tela.push({ nome: "Nova tela", blocos: [{ bloco: blocks[0].id, modo: "cheio", tamanho: 1 }] });
+  render();
+};
+document.getElementById("save").onclick = save;
+document.getElementById("undo").onclick = load;
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+# Carrossel do monitor da Pi. Tempos em segundos.
+# Cada [[tela]] mostra um ou mais blocos. modo = "cheio" ou "compacto";
+# divisao = "lado" (lado a lado) ou "empilhado" (um em cima do outro); tamanho = a fatia de cada bloco.
+# ao_vivo = de quanto em quanto tempo os blocos ao vivo (hoje: impressora e pi) são redesenhados sozinhos.
+
+[padrao]
+na_tela = 45      # tempo de cada tela
+redesenho = 30    # redesenho da tela inteira
+
+# De quanto em quanto tempo cada bloco é consultado. Fontes lentas ou que mudam pouco
+# (Tesouro, ANP, Banco Central) têm o próprio relógio dentro do bloco e só baixam quando precisa.
+[dados]
+mercado = 60
+mercado_mundo = 60
+juros = 300
+noticias = 600
+clima = 300
+clima_detalhes = 60
+combustivel = 300
+loteria = 300
+impressora = 1
+pi = 1
+
+[[tela]]
+nome = "Mercado"
+na_tela = 90
+redesenho = 60
+blocos = [{ bloco = "mercado" }]
+
+[[tela]]
+nome = "Juros"
+blocos = [{ bloco = "juros" }]
+
+[[tela]]
+nome = "Notícias"
+divisao = "lado"
+blocos = [{ bloco = "noticias", tamanho = 0.75 }, { bloco = "clima", modo = "compacto", tamanho = 0.25 }]
+
+[[tela]]
+nome = "Clima"
+divisao = "lado"
+blocos = [{ bloco = "clima", tamanho = 0.6 }, { bloco = "clima_detalhes", modo = "compacto", tamanho = 0.4 }]
+
+[[tela]]
+nome = "Combustível e Loteria"
+divisao = "lado"
+blocos = [{ bloco = "combustivel", tamanho = 0.6 }, { bloco = "loteria", modo = "compacto", tamanho = 0.4 }]
+
+[[tela]]
+nome = "Impressora e Pi"
+ao_vivo = 1
+divisao = "lado"
+blocos = [{ bloco = "impressora", tamanho = 1 }, { bloco = "pi", tamanho = 1 }]
+
+# O conteúdo de cada bloco (cidades, palavras vigiadas, ações, fontes de notícias, loterias)
+# fica em seções [blocos.<nome>]. Sem elas, vale o padrão do código. O jeito fácil de mexer
+# é a página http://<ip-da-pi>:8026 (só na rede de casa), que grava este arquivo.
+# Exemplo:
+# [blocos.noticias]
+# palavras_vigiadas = ["Copom", "Petrobras"]
