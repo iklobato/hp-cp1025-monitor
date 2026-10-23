@@ -14,7 +14,9 @@ from pathlib import Path
 import fields
 import ui
 
-CONFIG = Path.home() / "dashboard" / "carrossel.toml"
+CONFIG = Path(
+    os.environ.get("PI_DASHBOARD_CONFIG", Path.home() / "dashboard" / "carrossel.toml")
+)
 MODES = ("cheio", "compacto")
 SPLITS = ("lado", "empilhado")
 

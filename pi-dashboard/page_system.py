@@ -10,6 +10,7 @@ failed units, USB devices and the system itself.
 """
 
 import importlib.util
+import os
 import time
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
@@ -23,7 +24,7 @@ from sources import Job, Network, PiStats, PrinterReading, PrinterStatus, Source
 
 MONITOR_DIR = Path.home() / "hp-cp1025-monitor"
 HISTORY = MONITOR_DIR / "history.jsonl"
-STATUS_URL = "http://127.0.0.1:8025/api/status"
+STATUS_URL = os.environ.get("PI_DASHBOARD_PRINTER_URL", "http://127.0.0.1:8025/api/status")
 STATUS_SAVED = sources.CACHE_DIR / "printer-status.json"
 # Each block runs its commands on its own thread, so each needs its own output file.
 PRINTER_SCRATCH = sources.CACHE_DIR / "command-printer.txt"
