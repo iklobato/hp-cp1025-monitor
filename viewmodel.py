@@ -211,7 +211,10 @@ def usb_bus_rows(report):
     chain = " ▸ ".join(short_hop(hop) for hop in hops) or "–"
     available = topo.get("bus_power_available_ma")
     return {
-        "Caminho": f"Mac ▸ {chain} ▸ porta {fmt(topo.get('port'))}",
+        # The hub chain comes from the macOS IORegistry; elsewhere (the Raspberry Pi) it is empty.
+        "Caminho": f"Mac ▸ {chain} ▸ porta {fmt(topo.get('port'))}"
+        if topo
+        else "só no macOS (IORegistry)",
         "Hub": hops[-1] if hops else "–",
         "Endereço": f"{fmt(topo.get('address'))} · location {fmt(topo.get('location'))}",
         "Velocidade": f"{fmt(usb.get('speed'))} · USB {fmt(usb.get('usb_version'))}",

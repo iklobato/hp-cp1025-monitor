@@ -24,6 +24,7 @@ from viewmodel import (
     port_bits,
     revision_summary,
     short_hop,
+    usb_bus_rows,
 )
 from printer_model import (
     LEDM_PATHS,
@@ -616,6 +617,14 @@ def test_chip_ok_trusts_printer_state_over_present_tag():
     assert not Consumable("Yellow", state="missingMemory", chip_tag="DC7C/CF07").chip_ok
     assert Consumable("Cyan", state="ok", chip_tag="9383/B925").chip_ok
     assert not Consumable("Black", state="misinstalled", chip_tag="0000/0000").chip_ok
+
+
+def test_usb_path_says_macos_only_when_there_is_no_ioregistry_topology():
+    report = hardware_report()
+    report.topology = {}
+    rows = usb_bus_rows(report)
+    assert rows["Caminho"] == "só no macOS (IORegistry)"
+    assert rows["IDs"] == "03f0:112a · bcdDevice 0.01"
 
 
 def test_web_payload_carries_actions_tanks_and_hardware():
