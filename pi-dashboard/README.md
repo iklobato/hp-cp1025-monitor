@@ -36,6 +36,10 @@ sudo systemctl daemon-reload && sudo systemctl enable --now dashboard
 
 The service runs as `iklo` with the `video` and `tty` groups on `tty1` (it takes the console over from getty). `screen.py preview DIR` saves one PNG per screen from live data, without touching the monitor.
 
+To change it safely: copy the folder to a scratch directory on the Pi, run `screen.py selftest` there and check its exit code, then copy it to `~/dashboard` and restart the service. To see what is really on the monitor, read `/dev/fb0` and open it with Pillow as `Image.frombytes("RGB", (1920, 1080), raw, "raw", "BGR;16")`.
+
+Data is cached in `~/.cache/pi-dashboard/`. The big files that change rarely (the 14.6 MB Tesouro file, the ANP weekly surveys) are kept in `downloads/` for 12 hours and 7 days, so a restart does not download them again; a file is kept only after it was read fine.
+
 ## Files
 
 | File | Role |
@@ -54,7 +58,15 @@ The service runs as `iklo` with the `video` and `tty` groups on `tty1` (it takes
 - CARTO map tiles came back HTTP 200 with "API KEY REQUIRED" drawn on the picture; the map uses Esri tiles. A 200 does not prove the picture is right: look at it.
 - Some g1 pages declare their share picture as the word `None`; a bad picture address now means a story without a photo instead of a failed refresh.
 - Yahoo returns an empty quote before the first trade of the day. Eletrobras trades as AXIA3.
+- The Tesouro site answers HTTP 429 to `curl`'s default user agent but 200 to the dashboard's (`Mozilla/5.0 (pi-dashboard)`): test sources with `curl -A` and the same agent. On 2026-10-23 its newest prices were 8 days old, and reading the file takes about 16 s of CPU on a Pi 3.
 - ANP writes city names without accents and sometimes repeats a city's prices from one week to the next.
-- Caixa's Super Sete endpoint sometimes answers HTTP 500 on its side.
+- Caixa's Super Sete endpoint answered HTTP 500 on every check from 11:41 to at least 15:45 on 2026-10-23, on every address tried, including Caixa's own summary of all games: the error is on Caixa's side.
 - The public EMBI (country risk) series stopped on 2024-07-30, so it is shown only as a note.
 - Redrawing half the screen and converting it costs about 0.3 s of CPU on a Pi 3, so live blocks redraw only when their data changed (the printer) or every second (the Pi).
+
+## Status (2026-10-23) and what is still open
+
+- Running on the Pi since 2026-10-23; this folder is the exact code on it.
+- Measured: about 22% of one core on average over one carousel lap; the Pi at 52 to 60 C with no throttling; the dashboard process between 188 and 306 MB. Whether memory settles over hours is being measured.
+- Not seen yet: the printer screen with a full reading (the printer was off the whole time).
+- Open: install it from `setup.sh`; decide whether the settings page should answer on the tailnet once Tailscale is on; record the underlying network error when a download fails ("sem conexao" twice right after a restart, cause unknown); the city name is drawn twice on the map for a big city that the map already labels.
