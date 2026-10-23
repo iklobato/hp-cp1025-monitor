@@ -4,7 +4,7 @@
 # ao_vivo = de quanto em quanto tempo os blocos ao vivo (hoje: impressora e pi) são redesenhados sozinhos.
 
 [padrao]
-na_tela = 45      # tempo de cada tela
+na_tela = 30      # tempo de cada tela
 redesenho = 30    # redesenho da tela inteira
 
 # De quanto em quanto tempo cada bloco é consultado. Fontes lentas ou que mudam pouco
@@ -23,8 +23,7 @@ pi = 1
 
 [[tela]]
 nome = "Mercado e Juros"
-na_tela = 90
-redesenho = 60
+na_tela = 45
 divisao = "lado"
 blocos = [{ bloco = "mercado", modo = "compacto", tamanho = 0.3 }, { bloco = "juros", tamanho = 0.7 }]
 
