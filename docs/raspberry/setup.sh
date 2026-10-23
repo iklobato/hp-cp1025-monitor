@@ -17,6 +17,8 @@ readonly FILTER_DIR=/usr/lib/cups/filter
 readonly PPD_PI=/usr/local/share/cp1025/HP_CP1025-pi.ppd
 readonly QUEUE=HP_CP1025
 readonly DASHBOARD_PORT=8025
+# Seconds between dashboard readings; while one holds the USB device, CUPS may not see it.
+readonly DASHBOARD_EVERY=10
 
 step() { printf '\n== %s\n' "$1"; }
 fail() {
@@ -74,6 +76,8 @@ sed -e 's|/Library/Printers/foo2zjs/cp1025-foo2zjs|cp1025-foo2zjs|' \
 cupstestppd -W translations "$PPD_PI" >/dev/null || fail "cupstestppd rejected $PPD_PI"
 
 step "queue $QUEUE"
+# Pause the dashboard so it cannot hold the USB device while CUPS looks for the printer.
+sudo systemctl stop cp1025-dashboard.service 2>/dev/null || true
 uri=$(sudo lpinfo -v 2>/dev/null | awk '/usb:\/\/HP\/LaserJet%20CP%201025/ {print $2; exit}')
 [[ -n "$uri" ]] || fail "printer not found on USB: plug it in, switch it on, run again"
 sudo lpadmin -p "$QUEUE" -D "HP CP1025" -L Casa -E -v "$uri" -P "$PPD_PI" \
@@ -110,7 +114,7 @@ Wants=network-online.target
 User=$USER
 SupplementaryGroups=lp
 WorkingDirectory=$REPO_DIR
-ExecStart=/usr/bin/python3 printer_summary.py --web --host 0.0.0.0 --port $DASHBOARD_PORT
+ExecStart=/usr/bin/python3 printer_summary.py --web --host 0.0.0.0 --port $DASHBOARD_PORT --every $DASHBOARD_EVERY
 Restart=on-failure
 RestartSec=10
 NoNewPrivileges=yes

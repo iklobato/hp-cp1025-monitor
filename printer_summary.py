@@ -141,6 +141,13 @@ def main():
         help="endereco do --web (0.0.0.0 abre para a rede local)",
     )
     parser.add_argument(
+        "--every",
+        type=float,
+        default=web_dashboard.MIN_INTERVAL_SECONDS,
+        metavar="SEGUNDOS",
+        help="intervalo minimo entre leituras do --web",
+    )
+    parser.add_argument(
         "--full",
         action="store_true",
         help="mostra tambem chip, contadores, USB, log e configuracao",
@@ -157,7 +164,7 @@ def main():
     console = Console(no_color=args.no_color or None)
     try:
         if args.web:
-            web_dashboard.serve(args.warn, args.port, args.host)
+            web_dashboard.serve(args.warn, args.port, args.host, args.every)
         if args.live:
             live(console, args.warn)
         if args.watch:

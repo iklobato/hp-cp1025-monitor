@@ -28,8 +28,10 @@ SSE_KEEPALIVE_SECONDS = 15
 class PrinterFeed:
     """Owns the USB handle loop; every other thread only reads the latest serialized payload."""
 
-    def __init__(self, warn_percent, poller=None):
+    def __init__(self, warn_percent, poller=None, min_interval=MIN_INTERVAL_SECONDS):
         self.warn_percent = warn_percent
+        # A print server polls slower: while a reading holds the USB device, CUPS may not see it.
+        self.min_interval = min_interval
         self.poller = poller or Poller(feed_size=CHANGE_FEED_SIZE)
         self.version = 0
         self.payload = json.dumps({"loading": True})
@@ -42,11 +44,11 @@ class PrinterFeed:
                 reading = self.poller.tick()
             except (UsbError, RuntimeError) as error:
                 self.publish_error(error)
-                time.sleep(MIN_INTERVAL_SECONDS)
+                time.sleep(self.min_interval)
                 continue
             payload = build_payload(reading, self.warn_percent)
             self.publish(json.dumps(payload, ensure_ascii=False, default=str))
-            time.sleep(reading.next_in)
+            time.sleep(max(reading.next_in, self.min_interval))
 
     def publish(self, payload):
         with self.updated:
@@ -139,8 +141,10 @@ def make_handler(feed):
     return Handler
 
 
-def serve(warn_percent, port=DEFAULT_PORT, host=HOST):
-    feed = PrinterFeed(warn_percent)
+def serve(
+    warn_percent, port=DEFAULT_PORT, host=HOST, min_interval=MIN_INTERVAL_SECONDS
+):
+    feed = PrinterFeed(warn_percent, min_interval=min_interval)
     threading.Thread(target=feed.run_forever, name="printer-feed", daemon=True).start()
     server = ThreadingHTTPServer((host, port), make_handler(feed))
     server.daemon_threads = True
