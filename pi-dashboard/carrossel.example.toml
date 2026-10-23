@@ -22,14 +22,11 @@ impressora = 1
 pi = 1
 
 [[tela]]
-nome = "Mercado"
+nome = "Mercado e Juros"
 na_tela = 90
 redesenho = 60
-blocos = [{ bloco = "mercado" }]
-
-[[tela]]
-nome = "Juros"
-blocos = [{ bloco = "juros" }]
+divisao = "lado"
+blocos = [{ bloco = "mercado", modo = "compacto", tamanho = 0.3 }, { bloco = "juros", tamanho = 0.7 }]
 
 [[tela]]
 nome = "Notícias"
