@@ -16,11 +16,11 @@ See [docs/FINDINGS.md](docs/FINDINGS.md) for everything that was found along the
 
 Monitoring works (terminal and web, about 250 ms per full reading) while the printer is on the Mac's USB. **Printing works from macOS 14** since 2026-10-22 with the foo2zjs-based driver in [driver/macos/](driver/macos/README.md), which replaces HP's broken one; a black-and-white page is confirmed on paper, color is not yet.
 
-Since the evening of 2026-10-22 the printer sits on a **Raspberry Pi 3 network print server** that reuses the same driver chain (CUPS + foo2zjs, shared as AirPrint). It prints from the network, about 13 s per page; Tailscale, hardening and a rebuild script are still to do: [docs/raspberry/README.md](docs/raspberry/README.md). The ordered next steps and what is still unverified are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
+Since the evening of 2026-10-22 the printer sits on a **Raspberry Pi 3 network print server** that reuses the same driver chain (CUPS + foo2zjs, shared as AirPrint). It prints from the network in about 13 to 18 s per page, serves this repo's web dashboard to the home LAN at `http://impressora-pi.local:8025`, installs security updates by itself, and can be rebuilt with `docs/raspberry/setup.sh`; Tailscale and access rules are still to do: [docs/raspberry/README.md](docs/raspberry/README.md). The ordered next steps and what is still unverified are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
 
 ## Requirements
 
-- macOS (tested on 14.6.1, Intel). The USB topology panel uses `ioreg`; everything else is plain libusb.
+- macOS (tested on 14.6.1, Intel) or Linux (tested on Raspberry Pi OS Trixie). The USB hub-path panel uses `ioreg` and is empty on Linux; everything else is plain libusb. On Linux the kernel `usblp` driver must not hold the printer (see `docs/raspberry/setup.sh`).
 - Python 3.10+ (tested with 3.11)
 - `libusb-1.0` (`brew install libusb`)
 - `rich` for the terminal UI (`pip install -r requirements.txt`)
@@ -34,7 +34,7 @@ python3 printer_summary.py              # one-shot summary: verdict, what to do,
 python3 printer_summary.py --full       # plus chip data, counters, event log, USB and controller hardware
 python3 printer_summary.py --live       # full-screen, re-reads every ~1 s, feed of every change
 python3 printer_summary.py --watch 30   # full-screen, re-reads every 30 s
-python3 printer_summary.py --web        # live web page on http://127.0.0.1:8025 (--port to change)
+python3 printer_summary.py --web        # live web page on http://127.0.0.1:8025 (--port, --host, --every)
 python3 printer_summary.py --json       # machine-readable report
 ```
 
@@ -56,7 +56,7 @@ Every reading is appended to `history.jsonl` when something changed. With at lea
 
 ### Web
 
-The web page is served by the Python standard library, bound to `127.0.0.1` only, read-only. One thread owns the USB link; every browser tab gets each new reading through Server-Sent Events (`/events`), and `/api/status` returns the latest reading as JSON. The page is plain HTML/JS with no external assets, and follows the system light/dark setting.
+The web page is served by the Python standard library, read-only, bound to `127.0.0.1` unless `--host` says otherwise (the Raspberry Pi uses `--host 0.0.0.0 --every 10` for the home LAN). It has no login and shows serial numbers, so do not expose it beyond a trusted network. One thread owns the USB link; every browser tab gets each new reading through Server-Sent Events (`/events`), and `/api/status` returns the latest reading as JSON. The page is plain HTML/JS with no external assets, and follows the system light/dark setting.
 
 | Dark | Phone |
 |---|---|
