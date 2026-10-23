@@ -78,7 +78,13 @@ cupstestppd -W translations "$PPD_PI" >/dev/null || fail "cupstestppd rejected $
 step "queue $QUEUE"
 # Pause the dashboard so it cannot hold the USB device while CUPS looks for the printer.
 sudo systemctl stop cp1025-dashboard.service 2>/dev/null || true
-uri=$(sudo lpinfo -v 2>/dev/null | awk '/usb:\/\/HP\/LaserJet%20CP%201025/ {print $2; exit}')
+# A USB scan sometimes misses the printer (cause not found; 1 miss in 5 to 10 tries), so retry.
+uri=""
+for _ in 1 2 3 4 5; do
+	uri=$(sudo lpinfo -v 2>/dev/null | awk '/usb:\/\/HP\/LaserJet%20CP%201025/ {print $2; exit}')
+	[[ -n "$uri" ]] && break
+	sleep 3
+done
 [[ -n "$uri" ]] || fail "printer not found on USB: plug it in, switch it on, run again"
 sudo lpadmin -p "$QUEUE" -D "HP CP1025" -L Casa -E -v "$uri" -P "$PPD_PI" \
 	-o printer-is-shared=true -o print-color-mode-default=monochrome \
