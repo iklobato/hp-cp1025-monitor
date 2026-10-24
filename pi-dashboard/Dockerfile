@@ -11,7 +11,8 @@ USER dashboard
 WORKDIR /app
 COPY --chown=dashboard:dashboard . /app
 
-ENV PI_DASHBOARD_CONFIG=/config/carrossel.toml \
+ENV TZ=America/Sao_Paulo \
+    PI_DASHBOARD_CONFIG=/config/carrossel.toml \
     PYTHONUNBUFFERED=1 \
     MALLOC_ARENA_MAX=2
 ENTRYPOINT ["python3", "/app/screen.py"]
