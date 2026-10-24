@@ -3,7 +3,8 @@
 GET /api/config returns carrossel.toml as JSON plus the blocks that exist; POST /api/config
 takes the same JSON back, writes it as TOML, checks it with the same rules the carousel uses
 (layout.parse) and only then replaces the file, keeping the previous one as .bak. The
-carousel notices the new file at its next screen switch (layout.Watcher).
+carousel notices the new file at its next screen switch (layout.Watcher). A city whose name
+changed gets its coordinates (and IBGE code) looked up before the check (sources.find_city).
 
 Anyone outside a private address range gets 403: the Pi also has a public IPv6 address, and
 the server listens on IPv4 only besides.
@@ -24,6 +25,7 @@ from pathlib import Path
 
 import fields
 import layout
+import sources
 import ui
 
 PORT = 8026
@@ -138,8 +140,53 @@ def to_toml(config: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def save(config: dict, path: Path, blocks: dict[str, ui.Page]) -> layout.Plan:
+def saved_settings(path: Path, blocks: dict[str, ui.Page]) -> dict:
+    try:
+        return layout.parse(path.read_text(), blocks).settings
+    except (OSError, tomllib.TOMLDecodeError, layout.ConfigError):
+        return {}
+
+
+def locate(
+    config: dict, path: Path, blocks: dict[str, ui.Page], find
+) -> tuple[dict, list[str]]:
+    """The config with coordinates for every city whose name changed, and the cities found."""
+    settings = {
+        block: dict(values) if isinstance(values, dict) else values
+        for block, values in table(config.get("blocos", {}), "blocos").items()
+    }
+    before, found = saved_settings(path, blocks), []
+    for block, page in blocks.items():
+        values = settings.get(block)
+        for city in page.cities:
+            if not isinstance(values, dict) or not isinstance(
+                values.get(city.name), str
+            ):
+                continue  # missing: the default; not text: layout.parse explains
+            typed = values[city.name]
+            unchanged = typed == before.get(block, {}).get(city.name)
+            if unchanged and all(key in values for key in city.filled()):
+                continue
+            try:
+                place = find(typed)
+            except sources.SourceError as err:
+                raise layout.ConfigError(f"blocos.{block}.{city.name}: {err}") from err
+            values |= {
+                city.name: place.name,
+                city.latitude: place.latitude,
+                city.longitude: place.longitude,
+            }
+            if city.ibge:
+                values[city.ibge] = place.ibge
+            found.append(f"{place.name} ({place.state})")
+    return {**config, "blocos": settings}, found
+
+
+def save(
+    config: dict, path: Path, blocks: dict[str, ui.Page], find=sources.find_city
+) -> tuple[layout.Plan, list[str]]:
     """Write the new file only if the carousel would accept it; the old one stays as .bak."""
+    config, found = locate(table(config, "configuração"), path, blocks, find)
     text = to_toml(config)
     plan = layout.parse(text, blocks)
     if path.exists():
@@ -151,12 +198,16 @@ def save(config: dict, path: Path, blocks: dict[str, ui.Page]) -> layout.Plan:
     # NamedTemporaryFile is 0600; keep the mode the file had (0644 for a new one).
     os.chmod(temporary.name, path.stat().st_mode & 0o777 if path.exists() else 0o644)
     Path(temporary.name).replace(path)
-    return plan
+    return plan, found
+
+
+def filled_keys(page: ui.Page) -> set[str]:
+    return {key for city in page.cities for key in city.filled()}
 
 
 def current(path: Path, blocks: dict[str, ui.Page]) -> dict:
     """The file as it is, plus every block's settings with defaults filled in, and how the
-    page draws each field."""
+    page draws each field (fields filled from a city name are not drawn)."""
     text = path.read_text()
     ordered = sorted(blocks.items(), key=lambda item: item[1].name)
     return {
@@ -167,7 +218,11 @@ def current(path: Path, blocks: dict[str, ui.Page]) -> dict:
         ],
         "valores": layout.parse(text, blocks).settings,
         "parametros": {
-            block: [field.describe() for field in page.settings_fields]
+            block: [
+                field.describe()
+                for field in page.settings_fields
+                if field.key not in filled_keys(page)
+            ]
             for block, page in ordered
             if page.settings_fields
         },
@@ -211,7 +266,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             config = json.loads(self.rfile.read(length))
             with self.server.save_lock:
-                plan = save(config, self.server.config_path, self.server.blocks)
+                plan, found = save(
+                    config,
+                    self.server.config_path,
+                    self.server.blocks,
+                    self.server.find_city,
+                )
         except (json.JSONDecodeError, UnicodeDecodeError):
             self.reply_json(
                 400, {"ok": False, "mensagem": "a página mandou dados ilegíveis"}
@@ -220,13 +280,12 @@ class Handler(BaseHTTPRequestHandler):
         except layout.ConfigError as err:
             self.reply_json(400, {"ok": False, "mensagem": str(err)})
             return
-        self.reply_json(
-            200,
-            {
-                "ok": True,
-                "mensagem": f"salvo: {len(plan.screens)} telas, valem a partir da próxima troca de tela",
-            },
+        message = (
+            f"salvo: {len(plan.screens)} telas, valem a partir da próxima troca de tela"
         )
+        if found:
+            message += f"; cidade achada: {', '.join(found)}"
+        self.reply_json(200, {"ok": True, "mensagem": message})
 
     def allowed(self) -> bool:
         if is_local(self.client_address[0]):
@@ -254,10 +313,15 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(
-    blocks: dict[str, ui.Page], path: Path, port: int, host: str = "0.0.0.0"
+    blocks: dict[str, ui.Page],
+    path: Path,
+    port: int,
+    host: str = "0.0.0.0",
+    find_city=sources.find_city,
 ) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), Handler)
     server.blocks, server.config_path, server.save_lock = blocks, path, threading.Lock()
+    server.find_city = find_city
     threading.Thread(target=server.serve_forever, daemon=True, name="admin").start()
     return server
 
@@ -267,7 +331,26 @@ def selftest() -> None:
         def __init__(self, name: str, live: bool = False):
             self.name, self.live = name, live
 
-    blocks = {"clima": Stub("Clima"), "pi": Stub("Raspberry Pi", live=True)}
+    blocks = {
+        "clima": Stub("Clima"),
+        "pi": Stub("Raspberry Pi", live=True),
+        "tempo": Stub("Tempo"),
+    }
+    blocks["tempo"].settings_fields = (
+        fields.Field("cidade", "Cidade", "texto", "Sorocaba"),
+        fields.Field("lat", "Latitude", "decimal", -23.5, low=-90, high=90),
+        fields.Field("lon", "Longitude", "decimal", -47.4, low=-180, high=180),
+        fields.Field("ibge", "IBGE", "texto", "3552205"),
+    )
+    blocks["tempo"].cities = (fields.CityFields("cidade", "lat", "lon", "ibge"),)
+    lookups = []
+
+    def find_city(typed: str) -> sources.City:
+        lookups.append(typed)
+        if typed == "Atlântida":
+            raise sources.SourceError("não achei a cidade 'Atlântida'")
+        return sources.City("Sorocaba", "SP", "3552205", -23.5, -47.5)
+
     assert is_local("192.168.1.10") and is_local("127.0.0.1") and is_local("10.0.0.2")
     assert not is_local("8.8.8.8") and not is_local("100.64.0.1"), (
         "CGNAT is not the home network"
@@ -343,7 +426,7 @@ def selftest() -> None:
         path = Path(tmp) / "carrossel.toml"
         path.write_text(text)
         path.chmod(0o644)
-        server = serve(blocks, path, 0, host="127.0.0.1")
+        server = serve(blocks, path, 0, host="127.0.0.1", find_city=find_city)
         base = f"http://127.0.0.1:{server.server_address[1]}"
 
         def call(url: str, body: dict | None = None) -> tuple[int, dict]:
@@ -366,9 +449,11 @@ def selftest() -> None:
         assert "pi" not in payload["parametros"], (
             "a block without settings has no section"
         )
-        assert [b["id"] for b in payload["blocos"]] == ["clima", "pi"] and payload[
-            "blocos"
-        ][1]["ao_vivo"]
+        assert [b["id"] for b in payload["blocos"]] == [
+            "clima",
+            "pi",
+            "tempo",
+        ] and payload["blocos"][1]["ao_vivo"]
         broken = dict(config, dados={"clima": 0, "pi": 1})
         status, payload = call(f"{base}/api/config", broken)
         assert status == 400 and "dados.clima" in payload["mensagem"], payload
@@ -384,6 +469,53 @@ def selftest() -> None:
         )
         assert path.stat().st_mode & 0o777 == 0o644, (
             "saving keeps the file readable as before"
+        )
+        assert [
+            f["chave"] for f in call(f"{base}/api/config")[1]["parametros"]["tempo"]
+        ] == ["cidade"], (
+            "coordinates and code come from the name, so the page does not ask for them"
+        )
+        moved = dict(
+            changed,
+            blocos={"tempo": {"cidade": "sorocaba", "lat": 1, "lon": 2, "ibge": "1"}},
+        )
+        status, payload = call(f"{base}/api/config", moved)
+        assert (
+            status == 200 and "cidade achada: Sorocaba (SP)" in payload["mensagem"]
+        ), payload
+        assert tomllib.loads(path.read_text())["blocos"]["tempo"] == {
+            "cidade": "Sorocaba",
+            "lat": -23.5,
+            "lon": -47.5,
+            "ibge": "3552205",
+        }, "a new name brings its own coordinates and code"
+        again = dict(
+            changed,
+            blocos={
+                "tempo": {
+                    "cidade": "Sorocaba",
+                    "lat": -23.0,
+                    "lon": -46.8,
+                    "ibge": "3523404",
+                }
+            },
+        )
+        status, payload = call(f"{base}/api/config", again)
+        assert (
+            status == 200
+            and lookups == ["sorocaba"]
+            and "cidade achada" not in payload["mensagem"]
+        ), "an unchanged name is not looked up again"
+        saved = path.read_text()
+        status, payload = call(
+            f"{base}/api/config",
+            dict(changed, blocos={"tempo": {"cidade": "Atlântida"}}),
+        )
+        assert (
+            status == 400 and "blocos.tempo.cidade: não achei" in payload["mensagem"]
+        ), payload
+        assert path.read_text() == saved, (
+            "a city not found leaves the running file alone"
         )
         with urllib.request.urlopen(f"{base}/", timeout=5) as response:
             assert b"<title>" in response.read()

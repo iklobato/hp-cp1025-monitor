@@ -162,6 +162,20 @@ class Field:
         }
 
 
+@dataclass(frozen=True)
+class CityFields:
+    """Fields of one city: the page asks only for the name, the settings page fills the rest
+    from it (sources.find_city). ibge is empty when the block does not need the code."""
+
+    name: str
+    latitude: str
+    longitude: str
+    ibge: str = ""
+
+    def filled(self) -> tuple[str, ...]:
+        return tuple(key for key in (self.latitude, self.longitude, self.ibge) if key)
+
+
 def read_all(fields: tuple[Field, ...], raw, where: str) -> dict:
     if not isinstance(raw, dict):
         raise ValueError(f"{where}: precisa ser um grupo de campos")
