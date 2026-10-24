@@ -26,14 +26,7 @@ A screen can show one block or split between several, side by side (`lado`) or s
 
 ## Install on the Pi
 
-```bash
-sudo apt install python3-pil fonts-dejavu-core fonts-dejavu-extra
-mkdir -p ~/dashboard && cp pi-dashboard/* ~/dashboard/
-cp ~/dashboard/carrossel.example.toml ~/dashboard/carrossel.toml
-python3 ~/dashboard/screen.py selftest /tmp/dashboard-selftest   # every module's checks, no internet needed
-sudo cp ~/dashboard/dashboard.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now dashboard
-```
+[`setup.sh`](../docs/raspberry/setup.sh) installs it with the print server (step "HDMI monitor"): packages, a selftest from the repo, a copy to `~/dashboard`, `consoleblank=0` and `dashboard.service`. An existing `carrossel.toml` is kept. The OpenRouter key is the one thing to add by hand, in `/etc/pi-dashboard/openrouter.env`.
 
 The service runs as `iklo` with the `video` and `tty` groups on `tty1` (it takes the console over from getty). `screen.py preview DIR` saves one PNG per screen from live data, without touching the monitor.
 
@@ -101,4 +94,4 @@ docker run -d --name dashboard --user 0:0 --cap-add SYS_TTY_CONFIG \
 - Summaries: 93 written in the first 2 h 23 min, all of them fit, US$ 0.00125 spent. That includes the first fill of every story on screen, so a month should cost well under US$ 0.40; a full day is not measured yet. Some summaries almost repeat the title.
 - The OpenRouter key used today has no spending limit and is shared with other uses: the US$ 3 cap in the code only guards against this program's own mistakes. A key just for the dashboard, with its own limit, is safer.
 - Not seen yet: the printer screen with a full reading (the printer was off the whole time).
-- Open: install it from `setup.sh`; decide whether the settings page should answer on the tailnet once Tailscale is on; record the underlying network error when a download fails ("sem conexao" twice right after a restart, cause unknown); the city name is drawn twice on the map for a big city that the map already labels; the "pages per day" line has no data yet.
+- Open: decide whether the settings page should answer on the tailnet once Tailscale is on; record the underlying network error when a download fails ("sem conexao" twice right after a restart, cause unknown); the city name is drawn twice on the map for a big city that the map already labels; the "pages per day" line has no data yet.

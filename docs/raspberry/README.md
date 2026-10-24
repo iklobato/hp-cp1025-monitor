@@ -21,9 +21,9 @@ Scope is network printing only. The status monitor in this repo is not part of t
 | Survives a reboot | yes (2026-10-22 22:28): back in 57 s with CUPS, Avahi, the queue and the fast job start; jobs start rendering 1 s after they are queued |
 | Updates | security updates install every day by themselves (Debian-Security only); reboot at 04:30 when a patch needs it |
 | Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0); the Pi now runs `main` as installed by it |
-| HDMI monitor (2026-10-23) | `dashboard.service` draws a carousel on the monitor (tty1, framebuffer) from [`pi-dashboard/`](../../pi-dashboard/README.md); settings page `http://impressora-pi.local:8026`, private addresses only, so the tailnet (100.64.0.0/10) is refused until decided. About 22% of one core on average, 52 to 60 C, no throttling (`throttled=0x0`), 100 to 194 MB of memory with `MALLOC_ARENA_MAX=2`. The news summaries read an OpenRouter key from `/etc/pi-dashboard/openrouter.env` (root, mode 600). Not installed by `setup.sh` yet |
+| HDMI monitor (2026-10-23) | `dashboard.service` draws a carousel on the monitor (tty1, framebuffer) from [`pi-dashboard/`](../../pi-dashboard/README.md); settings page `http://impressora-pi.local:8026`, private addresses only, so the tailnet (100.64.0.0/10) is refused until decided. About 22% of one core on average, 52 to 60 C, no throttling (`throttled=0x0`), 100 to 194 MB of memory with `MALLOC_ARENA_MAX=2`. The news summaries read an OpenRouter key from `/etc/pi-dashboard/openrouter.env` (root, mode 600). Installed by `setup.sh` |
 | Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
-| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card, installing the HDMI monitor from `setup.sh` |
+| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card |
 
 ## Decisions
 
@@ -113,12 +113,13 @@ bash setup.sh
 
 | Step | What it does |
 |---|---|
-| packages | `cups cups-filters avahi-daemon build-essential libcups2-dev git time python3-rich libusb-1.0-0 unattended-upgrades` |
+| packages | `cups cups-filters avahi-daemon build-essential libcups2-dev git time python3-rich libusb-1.0-0 unattended-upgrades python3-pil fonts-dejavu-core fonts-dejavu-extra` |
 | D-Bus | `systemctl reload dbus`, so colord can start (see Problems found) |
 | usblp off | `/etc/modprobe.d/cp1025-no-usblp.conf`, so the dashboard can read the IEEE 1284 port status; CUPS prints through libusb and does not need usblp |
 | sources | this repo in `~/hp-cp1025-monitor` (`REPO_REF`, default `main`), foo2zjs at commit `e04290d` in `~/foo2zjs` |
 | driver | builds foo2zjs, `zjsdecode`, `rastertopksm`; installs the filter and its two helpers in `/usr/lib/cups/filter` |
 | PPD | `/usr/local/share/cp1025/HP_CP1025-pi.ppd`: the repo PPD with the Linux filter path, A4 only, CMYK as PPD default |
+| HDMI monitor | runs `pi-dashboard/screen.py selftest` from the repo, copies `pi-dashboard/` to `~/dashboard` (a missing `carrossel.toml` is seeded from `carrossel.example.toml`, an existing one is kept), creates `/etc/pi-dashboard` for the OpenRouter key (the key is added by hand), adds `consoleblank=0` to `/boot/firmware/cmdline.txt` (asks for one reboot when it adds it), installs `dashboard.service` for the admin user. Runs before the queue step, so it is installed even with the printer off |
 | queue | finds the USB URI (`usb://HP/LaserJet%20CP%201025?serial=<serial>`, retried up to 5 times), creates `HP_CP1025` shared, monochrome by default, `retry-job`, system default; `cupsctl --share-printers PreserveJobFiles=No WebInterface=yes` |
 | security updates | `20auto-upgrades` and `52cp1025-unattended` in `/etc/apt/apt.conf.d/` |
 | dashboard | `/etc/systemd/system/cp1025-dashboard.service`: `printer_summary.py --web --host 0.0.0.0 --port 8025 --every 10`, as the admin user with the `lp` group (which owns the printer's USB device node) |
