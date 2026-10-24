@@ -41,6 +41,25 @@ To change it safely: copy the folder to a scratch directory on the Pi, run `scre
 
 Data is cached in `~/.cache/pi-dashboard/`. Summaries are kept in `summaries.json` there, with what was spent each month. The big files that change rarely (the 14.6 MB Tesouro file, the ANP weekly surveys) are kept in `downloads/` for 12 hours and 7 days, so a restart does not download them again; a file is kept only after it was read fine.
 
+## Container (optional, not used on the Pi)
+
+`Dockerfile` builds the same code with Pillow and the DejaVu fonts; the image holds no config. The Pi runs the systemd service instead: in a test on 2026-10-23 the Docker daemon alone took about 71 MB of the Pi's 905 MB, and four blocks of the Pi screen stay empty in a container. The image is not published.
+
+```bash
+docker build -t pi-dashboard pi-dashboard
+docker run -d --name dashboard --user 0:0 --cap-add SYS_TTY_CONFIG \
+  --device /dev/fb0 --device /dev/tty1 -p 8026:8026 \
+  -e PI_DASHBOARD_PRINTER_URL=http://<pi-ip>:8025/api/status \
+  --env-file /etc/pi-dashboard/openrouter.env \
+  -v ~/dashboard:/config -v ~/.cache/pi-dashboard:/root/.cache/pi-dashboard \
+  --entrypoint sh pi-dashboard -c "exec python3 /app/screen.py run < /dev/tty1"
+```
+
+- `PI_DASHBOARD_CONFIG` (default `~/dashboard/carrossel.toml`) and `PI_DASHBOARD_PRINTER_URL` (default `http://127.0.0.1:8025/api/status`) move the config and the printer reading. `/config` must be a writable folder, not a single file, because the settings page replaces the file.
+- It runs as root: the `dashboard` user cannot open `/dev/tty1` (`620 root:tty`).
+- Empty in a container: print queue (`lpstat`), power (`vcgencmd`), services (`systemctl`) and journal (`journalctl`). Ports, connections and processes show only the container's own unless it runs with `--network host` and `--pid host`.
+- A run as root leaves root-owned files in the cache folder: `sudo chown -R $USER: ~/.cache/pi-dashboard` before going back to the service.
+
 ## Files
 
 | File | Role |
