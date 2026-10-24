@@ -9,6 +9,7 @@ import gzip
 import hashlib
 import io
 import html
+import http.client
 import json
 import math
 import re
@@ -116,6 +117,9 @@ def fetch_once(url: str, timeout: float, opener=urllib.request.urlopen) -> bytes
                 f"HTTP {err.code} (erro no servidor deles)", retryable=True
             ) from err
         raise SourceError(f"HTTP {err.code}") from err
+    except http.client.HTTPException as err:
+        # e.g. IncompleteRead: the server cut the body short
+        raise SourceError("resposta cortada", retryable=True) from err
     except (urllib.error.URLError, TimeoutError, OSError) as err:
         timed_out = isinstance(err, TimeoutError) or isinstance(
             getattr(err, "reason", None), TimeoutError
@@ -1934,6 +1938,18 @@ def selftest() -> None:
         assert "erro no servidor deles" in str(err) and len(calls) == FETCH_ATTEMPTS
     else:
         raise AssertionError("two 502s must fail")
+
+    class CutShort(io.BytesIO):
+        def read(self, *args):
+            raise http.client.IncompleteRead(b"")
+
+    replies = [CutShort(), io.BytesIO(b"ok")]
+    assert (
+        fetch_bytes(
+            "http://x", 1, lambda request, timeout: replies.pop(0), waits.append
+        )
+        == b"ok"
+    ), "a body cut short is tried once more instead of escaping as IncompleteRead"
     for body, message in (
         (b"<html>erro</html>", "veio página de erro em vez de dados"),
         (b"  ", "resposta vazia"),
