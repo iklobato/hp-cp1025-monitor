@@ -19,6 +19,9 @@ readonly QUEUE=HP_CP1025
 readonly DASHBOARD_PORT=8025
 # Seconds between dashboard readings; while one holds the USB device, CUPS may not see it.
 readonly DASHBOARD_EVERY=10
+readonly MONITOR_DIR=$HOME/dashboard
+readonly MONITOR_SECRETS=/etc/pi-dashboard
+readonly CMDLINE=/boot/firmware/cmdline.txt
 
 step() { printf '\n== %s\n' "$1"; }
 fail() {
@@ -33,7 +36,8 @@ step "packages"
 sudo apt-get update -qq
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
 	cups cups-filters avahi-daemon build-essential libcups2-dev git time \
-	python3-rich libusb-1.0-0 unattended-upgrades
+	python3-rich libusb-1.0-0 unattended-upgrades \
+	python3-pil fonts-dejavu-core fonts-dejavu-extra
 
 step "D-Bus policy for colord"
 # colord arrives with CUPS, but D-Bus only reads its policy on reload; until then every job
@@ -74,6 +78,32 @@ sed -e 's|/Library/Printers/foo2zjs/cp1025-foo2zjs|cp1025-foo2zjs|' \
 	-e 's/^\*DefaultColorModel: Gray/*DefaultColorModel: CMYK/' \
 	"$REPO_DIR/driver/macos/HP_CP1025-foo2zjs.ppd" | sudo tee "$PPD_PI" >/dev/null
 cupstestppd -W translations "$PPD_PI" >/dev/null || fail "cupstestppd rejected $PPD_PI"
+
+step "HDMI monitor carousel (tty1) and its settings page on port 8026"
+# Before the queue step, which stops the script when the printer is off: the monitor does
+# not need the printer. Checked from the repo first, so a broken copy is never installed.
+python3 "$REPO_DIR/pi-dashboard/screen.py" selftest "$build/monitor-selftest" >/dev/null ||
+	fail "pi-dashboard selftest failed"
+mkdir -p "$MONITOR_DIR"
+cp -r "$REPO_DIR/pi-dashboard/." "$MONITOR_DIR/"
+# The settings page owns carrossel.toml after the first run; only a missing one is seeded.
+[[ -f "$MONITOR_DIR/carrossel.toml" ]] ||
+	cp "$MONITOR_DIR/carrossel.example.toml" "$MONITOR_DIR/carrossel.toml"
+# The news summaries read OPENROUTER_API_KEY from here; the key itself is never in the repo.
+sudo install -d -o root -g root -m 755 "$MONITOR_SECRETS"
+# Without consoleblank=0 the kernel blanks the monitor after 10 minutes with no key press.
+# The kernel reads it only at boot.
+reboot_for_monitor=no
+if ! grep -qw consoleblank=0 "$CMDLINE"; then
+	sudo sed -i '1s/$/ consoleblank=0/' "$CMDLINE"
+	reboot_for_monitor=yes
+fi
+sed -e "s|/home/iklo|$HOME|g" -e "s|^User=iklo$|User=$USER|" \
+	"$REPO_DIR/pi-dashboard/dashboard.service" |
+	sudo tee /etc/systemd/system/dashboard.service >/dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable -q dashboard.service
+sudo systemctl restart dashboard.service
 
 step "queue $QUEUE"
 # Pause the dashboard so it cannot hold the USB device while CUPS looks for the printer.
@@ -137,3 +167,7 @@ step "done"
 printf 'print queue: ipp://%s.local/printers/%s\n' "$(hostname)" "$QUEUE"
 printf 'job list:    http://%s.local:631/jobs?which_jobs=all\n' "$(hostname)"
 printf 'dashboard:   http://%s.local:%s\n' "$(hostname)" "$DASHBOARD_PORT"
+printf 'monitor:     http://%s.local:8026 (settings, home network only)\n' "$(hostname)"
+sudo test -s "$MONITOR_SECRETS/openrouter.env" ||
+	printf 'news summaries off: put OPENROUTER_API_KEY=... in %s/openrouter.env (root, mode 600)\n' "$MONITOR_SECRETS"
+[[ $reboot_for_monitor == no ]] || printf 'reboot once so the monitor never blanks (consoleblank=0)\n'
