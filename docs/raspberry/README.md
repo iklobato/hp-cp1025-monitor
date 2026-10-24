@@ -6,9 +6,9 @@ Goal: every computer and phone prints to the CP1025 over the network instead of 
 Mac / iPhone / Android / Linux  --AirPrint/IPP-->  Raspberry Pi 3 (CUPS + foo2zjs + Avahi)  --USB-->  CP1025
 ```
 
-Scope is network printing only. The status monitor in this repo is not part of the Pi setup.
+The Pi also runs this repo's status page (port 8025) and drives an HDMI monitor ([`pi-dashboard/`](../../pi-dashboard/README.md)); `setup.sh` installs all three.
 
-## Status (last checked 2026-10-22 22:56)
+## Status (last checked 2026-10-23 23:47)
 
 | Area | State |
 |---|---|
@@ -20,10 +20,11 @@ Scope is network printing only. The status monitor in this repo is not part of t
 | Status dashboard | `http://impressora-pi.local:8025`: the repo's web dashboard as a systemd service (`cp1025-dashboard`), read-only, open to the home LAN, one reading every 10 s. It showed a page printed at 22:35 live ("+1 página(s) impressa(s), total 1328") |
 | Survives a reboot | yes (2026-10-22 22:28): back in 57 s with CUPS, Avahi, the queue and the fast job start; jobs start rendering 1 s after they are queued |
 | Updates | security updates install every day by themselves (Debian-Security only); reboot at 04:30 when a patch needs it |
-| Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0); the Pi now runs `main` as installed by it |
-| HDMI monitor (2026-10-23) | `dashboard.service` draws a carousel on the monitor (tty1, framebuffer) from [`pi-dashboard/`](../../pi-dashboard/README.md); settings page `http://impressora-pi.local:8026`, private addresses only, so the tailnet (100.64.0.0/10) is refused until decided. About 22% of one core on average, 52 to 60 C, no throttling (`throttled=0x0`), 100 to 194 MB of memory with `MALLOC_ARENA_MAX=2`. The news summaries read an OpenRouter key from `/etc/pi-dashboard/openrouter.env` (root, mode 600). Installed by `setup.sh` |
+| Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0). The HDMI monitor step was added on 2026-10-23 and only that step was run on this Pi (exit 0, nothing changed); the whole script was not run again because the printer was off |
+| HDMI monitor (2026-10-23) | `dashboard.service` draws a carousel on the monitor (tty1, framebuffer) from [`pi-dashboard/`](../../pi-dashboard/README.md); settings page `http://impressora-pi.local:8026`, private addresses only, so the tailnet (100.64.0.0/10) is refused until decided. About 22% of one core on average, 52 to 60 C, no throttling (`throttled=0x0`), 100 to 194 MB of memory with `MALLOC_ARENA_MAX=2`. The news summaries read an OpenRouter key from `/etc/pi-dashboard/openrouter.env` (root, mode 600), a key only for the dashboard with a US$ 3 monthly limit. Installed by `setup.sh` |
 | Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
-| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card |
+| Docker | installed for a test on 2026-10-23 and removed the same night (the daemon alone took about 71 MB); the monitor runs as a systemd service |
+| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card, 11 package updates waiting on 2026-10-23 23:47 (security ones install by themselves; the 11 were not checked one by one) |
 
 ## Decisions
 
@@ -146,7 +147,7 @@ cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py /DevMgmt/ProductStatusDyn.xml
 
 | Problem | Cause | Fix | State |
 |---|---|---|---|
-| Each job sat about 50 s before printing; the owner thought prints failed and sent them again | `gstoraster` asks colord for a color profile over D-Bus. colord was installed with CUPS, but the D-Bus daemon had not loaded colord's new policy file, so colord could not own `org.freedesktop.ColorManager` ("lost name") and quit; each job waited for two 25 s `DBus.Error.NoReply` timeouts | `sudo systemctl reload dbus`. colord now answers (1.4.7) and a job starts rendering 1 s after it is queued | **fixed**; survival across a reboot not tested yet |
+| Each job sat about 50 s before printing; the owner thought prints failed and sent them again | `gstoraster` asks colord for a color profile over D-Bus. colord was installed with CUPS, but the D-Bus daemon had not loaded colord's new policy file, so colord could not own `org.freedesktop.ColorManager` ("lost name") and quit; each job waited for two 25 s `DBus.Error.NoReply` timeouts | `sudo systemctl reload dbus`. colord now answers (1.4.7) and a job starts rendering 1 s after it is queued | **fixed**; holds after a reboot (2026-10-22 22:28) |
 | First phone job: tray reported `trayEmptyOrOpen` | paper not seated | owner reseated the paper | fixed |
 | Android job asked for US Letter (`media=Letter`) | the phone's print service picked Letter although the queue advertised A4 as default; the PPD offered A4 and Letter. Also, the filter read `media=Letter` and sent a Letter page even when the raster was drawn at A4 | the Pi's PPD offers A4 only (`media-supported` = `iso_a4_210x297mm`), and the filter now trusts only `PageSize` (which CUPS sets only for a size the PPD has) or the PPD default. On a test queue a `media=Letter` job now goes out as A4 (`paper=9`) | fixed; the next phone job (14) asked for A4 and went out as A4 |
 | Android job asked for color (`print-color-mode=color`) but printed in black and white | CUPS builds a preset only for monochrome (`ColorModel=Gray`) and leaves color jobs on the PPD default, which was `Gray` | PPD default `CMYK`, queue default `print-color-mode-default=monochrome`. On a test queue: no color asked = Gray (`cupsColorSpace 3`), `monochrome` = Gray, `color` = CMYK (`cupsColorSpace 6`) | fixed; phone job 14 (color) rendered in CMYK and printed (page counter +1) |
@@ -156,10 +157,12 @@ cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py /DevMgmt/ProductStatusDyn.xml
 | With the dashboard reading about once a second, CUPS discovery missed the printer (`lpinfo -v`: 4 of 5 tries) | a reading holds the USB device | the Pi's dashboard reads every 10 s (`--every 10`; 15 of 15 tries then), and `setup.sh` pauses it and retries the lookup | fixed for discovery; whether a job that starts during a reading is delayed was not tested (a page printed fine while it ran) |
 | The dashboard checked a queue called `HP_LaserJet_CP1025` | the name of the old HP queue, deleted on 2026-10-22 | checks `HP_CP1025` | fixed |
 | The default Debian `unattended-upgrades` list also takes point-release updates | `50unattended-upgrades` allows `label=Debian` | `#clear` and list Debian-Security only | fixed |
+| The monitor would blank after 10 minutes, and nothing recorded how that was avoided | `consoleblank=0` had been added by hand to `/boot/firmware/cmdline.txt` on 2026-10-23 | `setup.sh` adds it and asks for one reboot when it does | fixed |
+| When the printer is off, `setup.sh` stops at the queue step and leaves the status page (port 8025) stopped | the queue step stops `cp1025-dashboard` before it looks for the printer and exits without starting it again | none yet; start it by hand: `sudo systemctl start cp1025-dashboard` | open |
 
 ## Not verified yet
 - Power-cycling the printer while the Pi runs (the queue and the dashboard should recover).
-- `setup.sh` on a blank card; it has only run on this Pi, which was already built by hand.
+- `setup.sh` on a blank card; it has only run on this Pi, which was already built by hand. The whole script with the HDMI monitor step has not run yet, only that step alone.
 - Whether a job that starts during a dashboard reading waits or fails (`retry-job` would retry it).
 - How the color page from the phone (job 14) looks on paper: it printed, but nobody has reported the colors yet.
 - Whether the iPhone sees and prints to the Pi.
