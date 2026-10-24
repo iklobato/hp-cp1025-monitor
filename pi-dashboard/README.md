@@ -22,7 +22,9 @@ A screen can show one block or split between several, side by side (`lado`) or s
 
 - `http://<pi-address>:8026`, served by the dashboard itself. It answers only private addresses (home network, loopback); anything else gets 403. It listens on IPv4 only.
 - It edits screens, their order and times, the blocks on each screen, how often each block fetches data, and what each block shows: quotes, watched words, news sources, cities, fuel city and stations, lottery games.
-- Saving checks the file with the same rules the carousel uses, refuses a wrong value with a message and leaves the file alone, keeps the previous file as `carrossel.toml.bak`, and the carousel picks up the new file at its next screen switch. Saving from the page drops the comments in the file.
+- Every screen and every block starts folded; the folded line shows the time and the split (`45 s · Mercado 30% + Juros 70%`). Redraw, live interval and data refresh are under "Avançado". Sizes are percents; with two blocks, changing one changes the other. Yahoo lists are one line per stock (`PETR4.SA Petrobras`); news sources are a table (they can no longer be moved up or down). The page warns about unsaved changes and before leaving. Closed, the page is 1,064 px tall (it was 6,277 px with everything open).
+- Cities are typed by name. When a name changed, saving looks up its IBGE code (the IBGE list of 5,571 cities, kept 30 days in `downloads/`) and its coordinates (Open-Meteo geocoding, matched by state) and writes them; a name used in more than one state asks for `Name, UF`; a city not found refuses the save and leaves the file alone. The message says which city was found (`cidade achada: Campinas (SP)`).
+- Saving checks the file with the same rules the carousel uses, refuses a wrong value with a message and leaves the file alone, keeps the previous file as `carrossel.toml.bak`, and the carousel picks up the new file at its next screen switch. Saving from the page drops the comments in the file, and the first save writes sizes as percents (`30` instead of `0.3`, same split).
 
 ## Install on the Pi
 
@@ -83,15 +85,16 @@ docker run -d --name dashboard --user 0:0 --cap-add SYS_TTY_CONFIG \
 - ANP writes city names without accents and sometimes repeats a city's prices from one week to the next.
 - Caixa's Super Sete endpoint answered HTTP 500 on every check from 11:41 to at least 15:45 on 2026-10-23, on every address tried, including Caixa's own summary of all games: the error is on Caixa's side.
 - The public EMBI (country risk) series stopped on 2024-07-30, so it is shown only as a note.
+- One news page that arrived cut short (`http.client.IncompleteRead`, not an `OSError`) aborted the whole news refresh: 7 times on 2026-10-23, the screen kept old stories. It is now a retried source error (0 failures from 22:10 to 23:47).
+- OpenRouter answers `401 "User not found."` to a provisioning key (a key made only to create other keys) and, on 2026-10-23, to one normal key for a reason not found. `GET /api/v1/key` with the key shows `is_provisioning_key`. The dashboard's key was made from a provisioning key with `POST /api/v1/keys` (`limit` 3, `limit_reset` `monthly`).
 - Memory grew without stopping: 306 MB to 599 MB in 61 minutes, about 75 MB every 10 minutes. The same work in the main thread stayed flat and grew only in new threads, so the cause is glibc keeping one memory pool per thread. With `MALLOC_ARENA_MAX=2` in `dashboard.service` one process stayed between 100 and 194 MB for 2 h 23 min.
 - Drawing is not what makes the carousel slow: a full screen takes at most about 1 s of CPU (about 0.4 s of it is the color conversion for the framebuffer) and is drawn 4 s before it shows.
 - Redrawing half the screen and converting it costs about 0.3 s of CPU on a Pi 3, so live blocks redraw only when their data changed (the printer) or every second (the Pi).
 
-## Status (2026-10-23 20:26) and what is still open
+## Status (2026-10-23 23:47) and what is still open
 
 - Running on the Pi since 2026-10-23; `main` is the code on it.
 - Measured: about 22% of one core on average over one carousel lap; the Pi at 52 to 60 C with no throttling; the dashboard process between 100 and 194 MB over 2 h 23 min with `MALLOC_ARENA_MAX=2`. Over a full day it is not measured yet.
-- Summaries: 93 written in the first 2 h 23 min, all of them fit, US$ 0.00125 spent. That includes the first fill of every story on screen, so a month should cost well under US$ 0.40; a full day is not measured yet. Some summaries almost repeat the title.
-- The OpenRouter key used today has no spending limit and is shared with other uses: the US$ 3 cap in the code only guards against this program's own mistakes. A key just for the dashboard, with its own limit, is safer.
+- Summaries: 117 kept, US$ 0.0017 spent in October by 23:47 (93 of them and US$ 0.00125 in the first 2 h 23 min, including the first fill of every story on screen). From 20:47 to 23:16 every summary failed with HTTP 401; since 23:16 they run on a key only for the dashboard with a US$ 3 monthly limit on OpenRouter's side too, and none failed. A full day is not measured yet. Some summaries almost repeat the title.
 - Not seen yet: the printer screen with a full reading (the printer was off the whole time).
-- Open: decide whether the settings page should answer on the tailnet once Tailscale is on; record the underlying network error when a download fails ("sem conexao" twice right after a restart, cause unknown); the city name is drawn twice on the map for a big city that the map already labels; the "pages per day" line has no data yet.
+- Open: measure a full day (memory and summary cost) and fix the prompt if summaries keep repeating the title; decide whether the settings page should answer on the tailnet once Tailscale is on; record the underlying network error when a download fails ("sem conexao" twice right after a restart, cause unknown); the city name is drawn twice on the map for a big city that the map already labels; the "pages per day" line has no data yet.
