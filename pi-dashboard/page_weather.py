@@ -572,7 +572,13 @@ class WeatherPage(ui.Page):
 
     name = "Clima"
     settings_fields = (
-        fields.Field("cidade", "Cidade principal", "texto", DEFAULT_PLACES.home.name),
+        fields.Field(
+            "cidade",
+            "Cidade principal",
+            "texto",
+            DEFAULT_PLACES.home.name,
+            help="Se o nome existe em mais de um estado, escreva com a sigla: Bom Jesus, PI.",
+        ),
         fields.Field(
             "latitude",
             "Latitude",
@@ -580,7 +586,6 @@ class WeatherPage(ui.Page):
             DEFAULT_PLACES.home.latitude,
             low=-90,
             high=90,
-            help="Ache em open-meteo.com ou no Google Maps (clique no mapa): São Paulo é -23,548.",
         ),
         fields.Field(
             "longitude",
@@ -596,7 +601,6 @@ class WeatherPage(ui.Page):
             "texto",
             DEFAULT_PLACES.ibge,
             pattern=r"\d{7}",
-            help="7 dígitos; ache em ibge.gov.br/cidades-e-estados. São Paulo é 3550308.",
         ),
         fields.Field("cidade_2", "Segunda cidade", "texto", DEFAULT_PLACES.other.name),
         fields.Field(
@@ -615,6 +619,11 @@ class WeatherPage(ui.Page):
             low=-180,
             high=180,
         ),
+    )
+
+    cities = (
+        fields.CityFields("cidade", "latitude", "longitude", "codigo_ibge"),
+        fields.CityFields("cidade_2", "latitude_2", "longitude_2"),
     )
 
     def __init__(self, fetch_weather=sources.fetch_weather) -> None:

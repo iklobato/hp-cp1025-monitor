@@ -7,81 +7,89 @@
 <style>
   :root {
     --bg: #0d1117; --card: #161b22; --line: #3c444e; --dim: #8b949e; --text: #e6edf3;
-    --blue: #58a6ff; --green: #3fb950; --red: #f85149; --amber: #d29922;
+    --blue: #58a6ff; --green: #3fb950; --red: #f85149; --amber: #d29922; --stripe: #1e242d;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.4 system-ui, sans-serif; }
   main { max-width: 980px; margin: 0 auto; padding: 16px; }
   h1 { font-size: 22px; margin: 4px 0 2px; }
   h2 { font-size: 17px; margin: 0 0 10px; }
-  p.help { color: var(--dim); margin: 0 0 14px; }
-  section, .screen { background: var(--card); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
-  .screen { border: 1px solid var(--line); }
+  p.help, .help { color: var(--dim); margin: 0 0 10px; font-size: 13px; }
+  section { background: var(--card); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  details { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; }
+  details > summary { cursor: pointer; padding: 10px 12px; list-style-position: inside; }
+  details > summary .dim { margin-left: 6px; }
+  details[open] > summary { border-bottom: 1px solid var(--line); }
+  details > .body { padding: 12px; }
+  details.inner { border-style: dashed; margin-top: 10px; }
+  details.inner > summary { padding: 6px 10px; color: var(--dim); font-size: 13px; }
   .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 8px; }
   label { display: flex; flex-direction: column; gap: 3px; color: var(--dim); font-size: 13px; }
-  input, select, button { font: inherit; color: var(--text); background: var(--bg);
+  input, select, button, textarea { font: inherit; color: var(--text); background: var(--bg);
     border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
   input[type=number] { width: 96px; }
   input.name { width: 240px; max-width: 100%; }
+  textarea { width: 360px; max-width: 100%; min-height: 90px; }
+  textarea.lines { width: 100%; min-height: 0; font-family: ui-monospace, monospace; }
   button { cursor: pointer; }
   button:hover, button:focus-visible { border-color: var(--blue); outline: none; }
   button.primary { background: var(--blue); color: var(--bg); border-color: var(--blue); font-weight: 600; }
   button.danger { color: var(--red); }
-  .parts { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
+  button.icon { min-width: 34px; }
   .part { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; padding: 6px; border-radius: 6px; }
-  .part:nth-child(odd) { background: #1e242d; }
+  .part:nth-child(odd) { background: var(--stripe); }
   .data { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
   .bar { position: sticky; bottom: 0; background: var(--bg); padding: 12px 0; display: flex;
     gap: 10px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--line); }
   #status { flex: 1; min-width: 200px; }
-  .settings { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
-  .settings:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
-  .settings h3 { font-size: 15px; margin: 0 0 8px; }
-  .setting { margin-bottom: 12px; }
-  .setting > .help { color: var(--dim); font-size: 13px; margin: 2px 0 6px; }
-  textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
-    border-radius: 6px; padding: 6px 8px; width: 320px; max-width: 100%; min-height: 90px; }
+  .setting { margin-bottom: 14px; }
+  .setting > .help { margin: 2px 0 6px; }
   .checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
   .checks label { flex-direction: row; align-items: center; color: var(--text); font-size: 15px; }
-  .grid { display: grid; gap: 6px; }
-  .grid-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: end; padding: 6px; border-radius: 6px; }
-  .grid-row:nth-child(odd) { background: #1e242d; }
-  .grid-row input.wide { width: 360px; max-width: 100%; }
-  .grid-row input.letter { width: 48px; text-align: center; }
-  .ok { color: var(--green); } .error { color: var(--red); } .dim { color: var(--dim); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th { text-align: left; color: var(--dim); font-size: 13px; font-weight: normal; padding: 4px 6px; }
+  td { padding: 4px 6px; }
+  tbody tr:nth-child(odd) { background: var(--stripe); }
+  td input { width: 100%; min-width: 80px; }
+  td input.letter { width: 44px; min-width: 44px; text-align: center; }
+  td input.wide { min-width: 280px; }
+  .ok { color: var(--green); } .error { color: var(--red); } .dim { color: var(--dim); } .warn { color: var(--amber); }
 </style>
 </head>
 <body>
 <main>
   <h1>Painel da Pi</h1>
-  <p class="help">Telas do carrossel, tempos e blocos. Tempos em segundos. Ao salvar, vale a partir da próxima troca de tela.</p>
-
-  <section>
-    <h2>Padrão</h2>
-    <p class="help">Usado pelas telas que deixam o campo vazio.</p>
-    <div class="row">
-      <label>Tempo de cada tela<input type="number" min="1" step="1" id="padrao-na_tela"></label>
-      <label>Redesenho da tela inteira<input type="number" min="1" step="1" id="padrao-redesenho"></label>
-    </div>
-  </section>
+  <p class="help">Tempos em segundos. Ao salvar, vale a partir da próxima troca de tela.</p>
 
   <section>
     <h2>Telas</h2>
-    <p class="help">Na ordem em que aparecem. Cada tela mostra um ou mais blocos, lado a lado ou empilhados; o tamanho é a fatia de cada um.</p>
+    <p class="help">Na ordem em que aparecem. Clique numa tela para mudar.</p>
+    <div class="row">
+      <label>Tempo padrão de cada tela<input type="number" min="1" step="1" id="padrao-na_tela"></label>
+    </div>
     <div id="screens"></div>
     <button type="button" id="add-screen">+ nova tela</button>
   </section>
 
   <section>
-    <h2>Conteúdo dos blocos</h2>
-    <p class="help">O que cada bloco mostra. Mudar a cidade ou as fontes faz o bloco buscar dados novos na hora.</p>
+    <h2>O que cada bloco mostra</h2>
+    <p class="help">Mudar a cidade ou as fontes faz o bloco buscar dados novos na hora.</p>
     <div id="settings"></div>
   </section>
 
   <section>
-    <h2>Busca de dados</h2>
-    <p class="help">De quanto em quanto tempo cada bloco busca dados novos. Todo bloco usado numa tela precisa de um valor.</p>
-    <div class="data" id="data"></div>
+    <details>
+      <summary>Avançado <span class="dim">redesenho e busca de dados</span></summary>
+      <div class="body">
+        <div class="row">
+          <label>Redesenho padrão da tela inteira<input type="number" min="1" step="1" id="padrao-redesenho"></label>
+        </div>
+        <h2>Busca de dados</h2>
+        <p class="help">De quanto em quanto tempo cada bloco busca dados novos. Todo bloco usado numa tela precisa de um valor.</p>
+        <div class="data" id="data"></div>
+      </div>
+    </details>
   </section>
 
   <div class="bar">
@@ -95,6 +103,10 @@ let config = null;
 let blocks = [];
 let values = {};
 let params = {};
+let dirty = false;
+const openScreens = new WeakSet();
+const openAdvanced = new WeakSet();
+const openBlocks = new Set();
 
 function element(tag, props = {}, children = []) {
   const node = Object.assign(document.createElement(tag), props);
@@ -124,6 +136,10 @@ function select(options, value, onChange) {
   return node;
 }
 
+function button(text, onclick, props = {}) {
+  return element("button", { type: "button", textContent: text, onclick: () => { onclick(); changed(); render(); }, ...props });
+}
+
 function setOrDrop(target, key, value) {
   if (value === "" || value === null) delete target[key];
   else target[key] = value;
@@ -133,48 +149,95 @@ function move(list, index, step) {
   const other = index + step;
   if (other < 0 || other >= list.length) return;
   [list[index], list[other]] = [list[other], list[index]];
-  render();
+}
+
+// Keeps a <details> open across render(), which rebuilds the page.
+function folding(node, isOpen, remember) {
+  node.open = isOpen;
+  node.addEventListener("toggle", () => remember(node.open));
+  return node;
+}
+
+function blockName(id) {
+  return blocks.find(b => b.id === id)?.nome ?? id;
+}
+
+// tamanho is a weight: the screen splits by proportion, so the page shows and edits percents.
+function asPercents(screen) {
+  const parts = screen.blocos ?? [];
+  const total = parts.reduce((sum, part) => sum + (part.tamanho ?? 1), 0) || 1;
+  for (const part of parts) part.tamanho = Math.max(1, Math.round((part.tamanho ?? 1) / total * 100));
+}
+
+function screenSummary(screen, index) {
+  const seconds = screen.na_tela ?? config.padrao.na_tela;
+  const parts = screen.blocos ?? [];
+  const total = parts.reduce((sum, part) => sum + (part.tamanho ?? 1), 0) || 1;
+  const split = parts.map(p => `${blockName(p.bloco)} ${Math.round((p.tamanho ?? 1) / total * 100)}%`).join(" + ");
+  return [`${index + 1}. ${screen.nome || "sem nome"}`, `${seconds ?? "?"} s · ${split}`];
 }
 
 function renderPart(screen, part, index) {
   const blockOptions = blocks.map(b => [b.id, b.nome + (b.ao_vivo ? " (ao vivo)" : "")]);
+  const size = numberInput(part.tamanho ?? 50, v => {
+    setOrDrop(part, "tamanho", v);
+    const other = screen.blocos[1 - index];
+    if (screen.blocos.length === 2 && v !== "" && v > 0 && v < 100) {
+      other.tamanho = 100 - v;
+      size.closest(".parts").querySelectorAll("input.share")[1 - index].value = other.tamanho;
+    }
+  }, { step: "5", min: "1", className: "share" });
   return element("div", { className: "part" }, [
     field("Bloco", select(blockOptions, part.bloco, v => { part.bloco = v; render(); })),
     field("Modo", select([["cheio", "cheio"], ["compacto", "compacto"]], part.modo ?? "cheio", v => { part.modo = v; })),
-    field("Tamanho", numberInput(part.tamanho ?? 1, v => setOrDrop(part, "tamanho", v), { step: "0.05" })),
-    element("button", { type: "button", textContent: "↑", ariaLabel: "subir bloco", onclick: () => move(screen.blocos, index, -1) }),
-    element("button", { type: "button", textContent: "↓", ariaLabel: "descer bloco", onclick: () => move(screen.blocos, index, 1) }),
-    element("button", { type: "button", className: "danger", textContent: "remover bloco",
-      onclick: () => { screen.blocos.splice(index, 1); render(); } }),
+    field("Tamanho (%)", size),
+    button("↑", () => move(screen.blocos, index, -1), { className: "icon", ariaLabel: "subir bloco" }),
+    button("↓", () => move(screen.blocos, index, 1), { className: "icon", ariaLabel: "descer bloco" }),
+    button("×", () => screen.blocos.splice(index, 1), { className: "icon danger", ariaLabel: "remover bloco" }),
   ]);
 }
 
 function renderScreen(screen, index) {
   screen.blocos = screen.blocos ?? [];
+  const [title, detail] = screenSummary(screen, index);
+  const summary = element("summary", {}, [title, element("span", { className: "dim", textContent: detail })]);
   const name = element("input", { className: "name", value: screen.nome ?? "" });
   name.addEventListener("input", () => { screen.nome = name.value; });
-  const optional = key => numberInput(screen[key], v => setOrDrop(screen, key, v), { min: "1" });
-  const live = numberInput(screen.ao_vivo, v => setOrDrop(screen, "ao_vivo", v), { min: "1", placeholder: "sem" });
+  const optional = (key, placeholder) => numberInput(screen[key], v => setOrDrop(screen, key, v), { min: "1", placeholder });
   const parts = element("div", { className: "parts" }, screen.blocos.map((part, i) => renderPart(screen, part, i)));
-  parts.append(element("button", { type: "button", textContent: "+ bloco",
-    onclick: () => { screen.blocos.push({ bloco: blocks[0].id, modo: "cheio", tamanho: 1 }); render(); } }));
-  return element("div", { className: "screen" }, [
-    element("div", { className: "row" }, [
-      field(`Tela ${index + 1}: nome`, name),
-      element("button", { type: "button", textContent: "↑", ariaLabel: "subir tela", onclick: () => move(config.tela, index, -1) }),
-      element("button", { type: "button", textContent: "↓", ariaLabel: "descer tela", onclick: () => move(config.tela, index, 1) }),
-      element("button", { type: "button", className: "danger", textContent: "remover tela",
-        onclick: () => { if (confirm(`Remover a tela "${screen.nome}"?`)) { config.tela.splice(index, 1); render(); } } }),
+  const advanced = folding(element("details", { className: "inner" }, [
+    element("summary", { textContent: "Avançado desta tela" }),
+    element("div", { className: "body row" }, [
+      field("Redesenho (vazio = padrão)", optional("redesenho", `padrão ${config.padrao.redesenho ?? ""}`)),
+      field("Ao vivo a cada (vazio = sem)", optional("ao_vivo", "sem")),
     ]),
-    element("div", { className: "row" }, [
-      field("Tempo na tela (vazio = padrão)", optional("na_tela")),
-      field("Redesenho (vazio = padrão)", optional("redesenho")),
-      field("Ao vivo a cada (vazio = sem)", live),
-      field("Divisão", select([["lado", "lado a lado"], ["empilhado", "empilhado"]], screen.divisao ?? "lado",
-        v => { screen.divisao = v; })),
+  ]), openAdvanced.has(screen), open => open ? openAdvanced.add(screen) : openAdvanced.delete(screen));
+  const details = folding(element("details", {}, [
+    summary,
+    element("div", { className: "body" }, [
+      element("div", { className: "row" }, [
+        field("Nome", name),
+        field("Tempo na tela", optional("na_tela", `padrão ${config.padrao.na_tela ?? ""}`)),
+        field("Divisão", select([["lado", "lado a lado"], ["empilhado", "empilhado"]], screen.divisao ?? "lado",
+          v => { screen.divisao = v; })),
+      ]),
+      parts,
+      button("+ bloco", () => screen.blocos.push({ bloco: blocks[0].id, modo: "cheio", tamanho: 50 })),
+      advanced,
+      element("div", { className: "row" }, [
+        button("↑ subir tela", () => move(config.tela, index, -1)),
+        button("↓ descer tela", () => move(config.tela, index, 1)),
+        element("button", { type: "button", className: "danger", textContent: "remover tela",
+          onclick: () => { if (confirm(`Remover a tela "${screen.nome}"?`)) { config.tela.splice(index, 1); changed(); render(); } } }),
+      ]),
     ]),
-    parts,
-  ]);
+  ]), openScreens.has(screen), open => open ? openScreens.add(screen) : openScreens.delete(screen));
+  details.addEventListener("input", () => {
+    const [newTitle, newDetail] = screenSummary(screen, index);
+    summary.firstChild.textContent = newTitle;
+    summary.lastChild.textContent = newDetail;
+  });
+  return details;
 }
 
 function renderData() {
@@ -208,63 +271,84 @@ function settingField(block, field) {
     const chosen = new Set(current[field.chave] ?? []);
     const checks = element("div", { className: "checks" });
     for (const [option, text] of field.opcoes) {
-      const box = element("input", { type: "checkbox", checked: chosen.has(option) });
-      box.addEventListener("change", () => {
-        if (box.checked) chosen.add(option); else chosen.delete(option);
+      const check = element("input", { type: "checkbox", checked: chosen.has(option) });
+      check.addEventListener("change", () => {
+        if (check.checked) chosen.add(option); else chosen.delete(option);
         current[field.chave] = field.opcoes.map(o => o[0]).filter(o => chosen.has(o));
       });
-      checks.append(element("label", {}, [box, text]));
+      checks.append(element("label", {}, [check, text]));
     }
     box.append(checks);
   } else if (field.tipo === "tabela") {
-    box.append(settingTable(current, field));
+    box.append(isPairList(field) ? settingLines(current, field) : settingTable(current, field));
   }
   return box;
 }
 
-function settingTable(current, field) {
-  const rows = current[field.chave] = current[field.chave] ?? [];
-  const grid = element("div", { className: "grid" });
-  rows.forEach((row, index) => {
-    const cells = field.colunas.map(column => {
-      if (column.tipo === "escolha") {
-        return field_(column, select(column.opcoes, row[column.chave], v => { row[column.chave] = v; }));
-      }
-      if (column.tipo === "numero") {
-        return field_(column, numberInput(row[column.chave], v => { row[column.chave] = v; }));
-      }
-      const input = element("input", { value: row[column.chave] ?? "",
-        className: column.tipo === "sigla" ? "letter" : column.tipo === "url" ? "wide" : "" });
-      if (column.tipo === "sigla") input.maxLength = 1;
-      input.addEventListener("input", () => { row[column.chave] = input.value; });
-      return field_(column, input);
-    });
-    grid.append(element("div", { className: "grid-row" }, [
-      ...cells,
-      element("button", { type: "button", textContent: "↑", ariaLabel: "subir", onclick: () => move(rows, index, -1) }),
-      element("button", { type: "button", textContent: "↓", ariaLabel: "descer", onclick: () => move(rows, index, 1) }),
-      element("button", { type: "button", className: "danger", textContent: "remover",
-        onclick: () => { rows.splice(index, 1); render(); } }),
-    ]));
-  });
-  const blank = Object.fromEntries(field.colunas.map(c => [c.chave, c.tipo === "escolha" ? c.opcoes[0][0] : ""]));
-  grid.append(element("button", { type: "button", textContent: "+ linha",
-    onclick: () => { rows.push({ ...blank }); render(); } }));
-  return grid;
+// Two plain text columns (Yahoo symbol, name): one line each, the first word is the first
+// column. Symbols never hold spaces, names may.
+function isPairList(field) {
+  return field.colunas.length === 2 && field.colunas.every(c => c.tipo === "texto");
 }
 
-function field_(column, input) {
-  return field(column.rotulo, input);
+function settingLines(current, field) {
+  const [first, second] = field.colunas;
+  const rows = current[field.chave] ?? [];
+  const area = element("textarea", { className: "lines", rows: Math.max(4, rows.length + 1),
+    value: rows.map(row => `${row[first.chave] ?? ""} ${row[second.chave] ?? ""}`.trim()).join("\n") });
+  area.addEventListener("input", () => {
+    current[field.chave] = area.value.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
+      const [key, ...rest] = line.split(/\s+/);
+      return { [first.chave]: key, [second.chave]: rest.join(" ") };
+    });
+  });
+  return element("label", {}, [area,
+    element("span", { className: "dim", textContent: `uma por linha: ${lower(first.rotulo)}, espaço, ${lower(second.rotulo)}` })]);
+}
+
+function lower(label) {
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+function settingTable(current, field) {
+  const rows = current[field.chave] = current[field.chave] ?? [];
+  const head = element("tr", {}, [...field.colunas.map(c => element("th", { textContent: c.rotulo })), element("th")]);
+  const body = element("tbody", {}, rows.map((row, index) => element("tr", {}, [
+    ...field.colunas.map(column => element("td", {}, [cell(row, column)])),
+    element("td", {}, [button("×", () => rows.splice(index, 1), { className: "icon danger", ariaLabel: "remover linha" })]),
+  ])));
+  const blank = Object.fromEntries(field.colunas.map(c => [c.chave, c.tipo === "escolha" ? c.opcoes[0][0] : ""]));
+  return element("div", {}, [
+    element("div", { className: "table-wrap" }, [element("table", {}, [element("thead", {}, [head]), body])]),
+    button("+ linha", () => rows.push({ ...blank })),
+  ]);
+}
+
+function cell(row, column) {
+  const aria = { ariaLabel: column.rotulo };
+  if (column.tipo === "escolha") {
+    return Object.assign(select(column.opcoes, row[column.chave], v => { row[column.chave] = v; }), aria);
+  }
+  if (column.tipo === "numero") {
+    return numberInput(row[column.chave], v => { row[column.chave] = v; }, aria);
+  }
+  const input = element("input", { value: row[column.chave] ?? "", ...aria,
+    className: column.tipo === "sigla" ? "letter" : column.tipo === "url" ? "wide" : "" });
+  if (column.tipo === "sigla") input.maxLength = 1;
+  input.addEventListener("input", () => { row[column.chave] = input.value; });
+  return input;
+}
+
+function blockSummary(block, fieldList) {
+  const words = fieldList.filter(f => f.tipo === "texto").map(f => values[block][f.chave]).filter(Boolean);
+  return words.join(", ");
 }
 
 function renderSettings() {
-  return Object.entries(params).map(([block, fieldList]) => {
-    const name = blocks.find(b => b.id === block)?.nome ?? block;
-    return element("div", { className: "settings" }, [
-      element("h3", { textContent: name }),
-      ...fieldList.map(f => settingField(block, f)),
-    ]);
-  });
+  return Object.entries(params).map(([block, fieldList]) => folding(element("details", {}, [
+    element("summary", {}, [blockName(block), element("span", { className: "dim", textContent: blockSummary(block, fieldList) })]),
+    element("div", { className: "body" }, fieldList.map(f => settingField(block, f))),
+  ]), openBlocks.has(block), open => open ? openBlocks.add(block) : openBlocks.delete(block)));
 }
 
 function render() {
@@ -286,7 +370,12 @@ function say(text, kind) {
   status.className = kind;
 }
 
-async function load() {
+function changed() {
+  dirty = true;
+  say("mudanças não salvas", "warn");
+}
+
+async function load(message = "arquivo atual carregado") {
   try {
     const response = await fetch("/api/config");
     const payload = await response.json();
@@ -295,8 +384,10 @@ async function load() {
     blocks = payload.blocos;
     values = payload.valores;
     params = payload.parametros;
+    for (const screen of config.tela ?? []) asPercents(screen);
     render();
-    say("arquivo atual carregado", "dim");
+    dirty = false;
+    say(message, message === "arquivo atual carregado" ? "dim" : "ok");
   } catch (err) {
     say(`não consegui carregar: ${err.message}`, "error");
   }
@@ -310,18 +401,25 @@ async function save() {
       body: JSON.stringify({ ...config, blocos: values }),
     });
     const payload = await response.json();
-    say(payload.mensagem, payload.ok ? "ok" : "error");
+    if (payload.ok) await load(payload.mensagem);  // the server may have filled a city in
+    else say(payload.mensagem, "error");
   } catch (err) {
     say(`não salvou: ${err.message}`, "error");
   }
 }
 
+document.querySelector("main").addEventListener("input", changed);
+document.querySelector("main").addEventListener("change", changed);
+window.addEventListener("beforeunload", event => { if (dirty) event.preventDefault(); });
 document.getElementById("add-screen").onclick = () => {
-  config.tela.push({ nome: "Nova tela", blocos: [{ bloco: blocks[0].id, modo: "cheio", tamanho: 1 }] });
+  const screen = { nome: "Nova tela", blocos: [{ bloco: blocks[0].id, modo: "cheio", tamanho: 100 }] };
+  config.tela.push(screen);
+  openScreens.add(screen);
+  changed();
   render();
 };
 document.getElementById("save").onclick = save;
-document.getElementById("undo").onclick = load;
+document.getElementById("undo").onclick = () => load();
 load();
 </script>
 </body>

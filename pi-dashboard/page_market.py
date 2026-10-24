@@ -466,7 +466,6 @@ class MarketPage(ui.Page):
             "Tabela de ações (até 12)",
             "tabela",
             quote_rows(BRAZIL_STOCKS),
-            help=SYMBOL_HELP,
             low=0,
             high=12,
             columns=QUOTE_COLUMNS,

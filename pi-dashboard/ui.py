@@ -57,6 +57,7 @@ class Page:
     name = ""
     live = False  # True: the carousel redraws this block alone at the screen's ao_vivo interval
     settings_fields: tuple = ()  # fields.Field list: what [blocos.<id>] and the settings page set
+    cities: tuple = ()  # fields.CityFields: filled from the city name when the page saves
 
     def apply_settings(self, values: dict) -> None:
         """Values already checked by fields.read_all; replace whole attributes, as refresh() does."""
