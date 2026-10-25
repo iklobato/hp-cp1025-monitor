@@ -65,6 +65,13 @@ STATUS_CATEGORIES_PT = {
     "tonerSealInPlace": "lacre do toner não removido",
     "unknown": "desconhecido",
 }
+# The printer labels these Error yet keeps printing (docs/FINDINGS.md, 2026-10-22), so they
+# lower the verdict to a warning instead of a permanent red.
+SUPPLY_ORIGIN_ALERTS = {
+    "incompatibleConsumable",
+    "nonHPSupplyDetected",
+    "usedConsumable",
+}
 CONSUMABLE_STATES_PT = {
     "ok": "ok",
     "used": "usado/recondicionado",
@@ -288,7 +295,10 @@ class Report:
         if (
             self.errors
             or self.port.get("error")
-            or any(a[0] == "Error" for a in self.alerts)
+            or any(
+                a[0] == "Error" and a[1] not in SUPPLY_ORIGIN_ALERTS
+                for a in self.alerts
+            )
         ):
             return Severity.ERROR
         if any(c.state not in OK_STATES for c in self.consumables):

@@ -252,8 +252,21 @@ function renderDetails(d) {
   kv($("settings"), d.settings);
 }
 
+function renderWaiting(d) {
+  // No full reading since the server started (printer off at boot): say why instead of "conectando…".
+  const v = $("verdict");
+  v.textContent = d.feed_error ? "✖ SEM LEITURA" : "conectando…";
+  v.className = `badge verdict ${d.feed_error ? "b-bad" : ""}`;
+  const err = $("feedError");
+  err.textContent = d.feed_error ? `${d.feed_error} · ligue a impressora; a página atualiza sozinha` : "";
+  err.classList.toggle("hidden", !err.textContent);
+}
+
 function render(d) {
-  if (d.loading) return;
+  if (d.loading) {
+    renderWaiting(d);
+    return;
+  }
   for (const part of [renderHeader, renderActions, renderTanks, renderStatus, renderSupplies, renderChanges, renderCounters, renderHardware, renderDetails]) {
     part(d);
   }

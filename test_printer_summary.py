@@ -18,6 +18,7 @@ import macos_usb
 import web_dashboard
 from dashboard import live_layout, render
 from viewmodel import (
+    action_items,
     build_payload,
     humanize,
     humanize_queue,
@@ -127,6 +128,26 @@ def test_severity_error_for_bad_chip_warning_for_low_only_ok_when_healthy():
     healthy = sample_report()
     healthy.consumables = [Consumable("Magenta", state="ok", percent=60)]
     assert healthy.severity(20) == Severity.OK
+
+
+def test_non_original_cartridge_alert_is_a_warning_with_an_action_not_an_error():
+    # The printer labels this alert Error but keeps printing (docs/FINDINGS.md, 2026-10-22).
+    report = sample_report(
+        alerts=[("Error", "incompatibleConsumable", "Preto, Amarelo")]
+    )
+    report.consumables = [Consumable("Black", state="ok", percent=100)]
+    assert report.severity(20) == Severity.WARNING
+    assert (
+        "suprimento incompatível",
+        "Preto, Amarelo: não original; imprime normal, mas o nível pode não ser real",
+        None,
+    ) in action_items(report, 20)
+    jammed = sample_report(alerts=[("Error", "jamInPrinter", "")])
+    jammed.consumables = report.consumables
+    assert jammed.severity(20) == Severity.ERROR
+    assert ("papel atolado", "confira a impressora", None) in action_items(
+        jammed, 20
+    ), "every alert shows up in what to do, so the card never says nothing to do"
 
 
 def test_parse_rejects_stale_response_for_another_resource():
@@ -699,6 +720,29 @@ def test_web_server_serves_page_status_and_sse_stream():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_feed_survives_any_error_and_shows_it_next_to_the_last_reading():
+    class Failing:
+        def __init__(self, error):
+            self.error = error
+
+        def tick(self):
+            raise self.error
+
+    for error in (RuntimeError("printer not found on USB"), KeyError("supplies")):
+        feed = web_dashboard.PrinterFeed(20, poller=Failing(error), min_interval=7)
+        feed.publish(json.dumps({"reads": 3}))
+        assert feed.step() == 7, f"{error!r} must not stop the feed thread"
+        _, payload, message = feed.snapshot()
+        assert json.loads(payload) == {"reads": 3} and "leitura falhou" in message
+
+
+def test_page_shows_the_feed_error_before_the_first_reading():
+    page = Path(web_dashboard.PAGE).read_text()
+    assert "renderWaiting(d)" in page and "function renderWaiting" in page, (
+        "printer off at start: the page must say why, not 'conectando…' forever"
+    )
 
 
 def test_json_output_is_valid_and_carries_severity():
