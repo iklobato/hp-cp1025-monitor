@@ -121,7 +121,7 @@ bash setup.sh
 | driver | builds foo2zjs, `zjsdecode`, `rastertopksm`; installs the filter and its two helpers in `/usr/lib/cups/filter` |
 | PPD | `/usr/local/share/cp1025/HP_CP1025-pi.ppd`: the repo PPD with the Linux filter path, A4 only, CMYK as PPD default |
 | HDMI monitor | runs `pi-dashboard/screen.py selftest` from the repo, copies `pi-dashboard/` to `~/dashboard` (a missing `carrossel.toml` is seeded from `carrossel.example.toml`, an existing one is kept), creates `/etc/pi-dashboard` for the OpenRouter key (the key is added by hand), adds `consoleblank=0` to `/boot/firmware/cmdline.txt` (asks for one reboot when it adds it), installs `dashboard.service` for the admin user. Runs before the queue step, so it is installed even with the printer off |
-| queue | finds the USB URI (`usb://HP/LaserJet%20CP%201025?serial=<serial>`, retried up to 5 times), creates `HP_CP1025` shared, monochrome by default, `retry-job`, system default; `cupsctl --share-printers PreserveJobFiles=No WebInterface=yes` |
+| queue | finds the USB URI (`usb://HP/LaserJet%20CP%201025?serial=<serial>`, retried up to 5 times), creates `HP_CP1025` shared, monochrome by default, `retry-job`, system default; `cupsctl --share-printers PreserveJobFiles=No WebInterface=yes`. With the printer off it warns, leaves the queue as it is, and the script carries on and fails at the end |
 | security updates | `20auto-upgrades` and `52cp1025-unattended` in `/etc/apt/apt.conf.d/` |
 | dashboard | `/etc/systemd/system/cp1025-dashboard.service`: `printer_summary.py --web --host 0.0.0.0 --port 8025 --every 10`, as the admin user with the `lp` group (which owns the printer's USB device node) |
 
@@ -158,7 +158,7 @@ cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py /DevMgmt/ProductStatusDyn.xml
 | The dashboard checked a queue called `HP_LaserJet_CP1025` | the name of the old HP queue, deleted on 2026-10-22 | checks `HP_CP1025` | fixed |
 | The default Debian `unattended-upgrades` list also takes point-release updates | `50unattended-upgrades` allows `label=Debian` | `#clear` and list Debian-Security only | fixed |
 | The monitor would blank after 10 minutes, and nothing recorded how that was avoided | `consoleblank=0` had been added by hand to `/boot/firmware/cmdline.txt` on 2026-10-23 | `setup.sh` adds it and asks for one reboot when it does | fixed |
-| When the printer is off, `setup.sh` stops at the queue step and leaves the status page (port 8025) stopped | the queue step stops `cp1025-dashboard` before it looks for the printer and exits without starting it again | none yet; start it by hand: `sudo systemctl start cp1025-dashboard` | open |
+| When the printer is off, `setup.sh` stops at the queue step and leaves the status page (port 8025) stopped | the queue step stops `cp1025-dashboard` before it looks for the printer and exits without starting it again | a missing printer no longer stops the script: it prints a warning, runs every other step (the status page is started again in its own step), and fails at the end saying only the queue is left | fixed |
 
 ## Not verified yet
 - Power-cycling the printer while the Pi runs (the queue and the dashboard should recover).

@@ -80,8 +80,8 @@ sed -e 's|/Library/Printers/foo2zjs/cp1025-foo2zjs|cp1025-foo2zjs|' \
 cupstestppd -W translations "$PPD_PI" >/dev/null || fail "cupstestppd rejected $PPD_PI"
 
 step "HDMI monitor carousel (tty1) and its settings page on port 8026"
-# Before the queue step, which stops the script when the printer is off: the monitor does
-# not need the printer. Checked from the repo first, so a broken copy is never installed.
+# The monitor does not need the printer. Checked from the repo first, so a broken copy is
+# never installed.
 python3 "$REPO_DIR/pi-dashboard/screen.py" selftest "$build/monitor-selftest" >/dev/null ||
 	fail "pi-dashboard selftest failed"
 mkdir -p "$MONITOR_DIR"
@@ -115,11 +115,18 @@ for _ in 1 2 3 4 5; do
 	[[ -n "$uri" ]] && break
 	sleep 3
 done
-[[ -n "$uri" ]] || fail "printer not found on USB: plug it in, switch it on, run again"
-sudo lpadmin -p "$QUEUE" -D "HP CP1025" -L Casa -E -v "$uri" -P "$PPD_PI" \
-	-o printer-is-shared=true -o print-color-mode-default=monochrome \
-	-o printer-error-policy=retry-job
-sudo lpadmin -d "$QUEUE"
+# A switched-off printer only leaves the queue undone: the steps below still run (they restart
+# the dashboard stopped above), and the script fails at the end.
+queue_missing=no
+if [[ -n "$uri" ]]; then
+	sudo lpadmin -p "$QUEUE" -D "HP CP1025" -L Casa -E -v "$uri" -P "$PPD_PI" \
+		-o printer-is-shared=true -o print-color-mode-default=monochrome \
+		-o printer-error-policy=retry-job
+	sudo lpadmin -d "$QUEUE"
+else
+	queue_missing=yes
+	printf 'WARNING: printer not found on USB: queue %s not changed\n' "$QUEUE" >&2
+fi
 sudo cupsctl --share-printers PreserveJobFiles=No WebInterface=yes
 
 step "security updates"
@@ -171,3 +178,5 @@ printf 'monitor:     http://%s.local:8026 (settings, home network only)\n' "$(ho
 sudo test -s "$MONITOR_SECRETS/openrouter.env" ||
 	printf 'news summaries off: put OPENROUTER_API_KEY=... in %s/openrouter.env (root, mode 600)\n' "$MONITOR_SECRETS"
 [[ $reboot_for_monitor == no ]] || printf 'reboot once so the monitor never blanks (consoleblank=0)\n'
+[[ $queue_missing == no ]] ||
+	fail "printer not found on USB: everything else is set up; switch it on and run again for the queue"
