@@ -14,6 +14,7 @@ from printer_model import (
     QUEUE_NAME,
     Severity,
     STATUS_CATEGORIES_PT,
+    SUPPLY_ORIGIN_ALERTS,
     event_hint,
     years_since,
 )
@@ -315,7 +316,17 @@ def action_items(report, warn_percent):
     if report.queue_paused:
         items.append(("Fila pausada", f"depois rode cupsenable {QUEUE_NAME}", None))
     items += [("Falha de leitura", error, None) for error in report.errors]
+    items += [
+        (translate_category(alert_id), alert_advice(alert_id, colors), None)
+        for _, alert_id, colors in report.alerts
+    ]
     return items
+
+
+def alert_advice(alert_id, colors):
+    if alert_id in SUPPLY_ORIGIN_ALERTS:
+        return f"{colors}: não original; imprime normal, mas o nível pode não ser real"
+    return "confira a impressora"
 
 
 def next_to_run_out(report, prediction):

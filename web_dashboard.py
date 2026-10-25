@@ -10,6 +10,7 @@ read-only GET endpoints:
 import json
 import threading
 import time
+import traceback
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -40,15 +41,24 @@ class PrinterFeed:
 
     def run_forever(self):
         while True:
-            try:
-                reading = self.poller.tick()
-            except (UsbError, RuntimeError) as error:
-                self.publish_error(error)
-                time.sleep(self.min_interval)
-                continue
+            time.sleep(self.step())
+
+    def step(self):
+        """One reading published; returns the pause before the next. Never raises: a dead feed
+        thread would leave the page on an old reading with no warning, and systemd would not
+        restart a process that is still serving."""
+        try:
+            reading = self.poller.tick()
             payload = build_payload(reading, self.warn_percent)
-            self.publish(json.dumps(payload, ensure_ascii=False, default=str))
-            time.sleep(max(reading.next_in, self.min_interval))
+        except (UsbError, RuntimeError) as error:  # printer off or busy: expected
+            self.publish_error(error)
+            return self.min_interval
+        except Exception as error:  # top of the feed thread: log it, keep serving
+            traceback.print_exc()
+            self.publish_error(error)
+            return self.min_interval
+        self.publish(json.dumps(payload, ensure_ascii=False, default=str))
+        return max(reading.next_in, self.min_interval)
 
     def publish(self, payload):
         with self.updated:
