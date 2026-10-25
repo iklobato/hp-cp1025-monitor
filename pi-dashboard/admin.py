@@ -15,10 +15,12 @@ import json
 import math
 import os
 import re
+import socket
 import tempfile
 import threading
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,8 +40,33 @@ HEADER = (
     "# Tempos em segundos. modo = cheio ou compacto; divisao = lado ou empilhado;\n"
     "# tamanho = a fatia de cada bloco; ao_vivo = redesenho só dos blocos ao vivo.\n"
 )
+# A settings save is one ~2 KB request; a client that stops sending must not keep a thread.
+REQUEST_TIMEOUT_SECONDS = 30
 SCREEN_OPTIONAL = ("na_tela", "redesenho", "ao_vivo", "divisao")
 BARE_KEY = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def known_host(host_header: str) -> bool:
+    """The address typed in the browser: an IP, or this Pi's own name. A site of someone else's
+    pointed at the Pi (DNS rebinding) arrives with its own name and is refused."""
+    name = urllib.parse.urlsplit(f"//{host_header}").hostname or ""
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        # gethostname() is "impressora-pi" on the Pi but already ends in .local on a Mac.
+        own = socket.gethostname().lower().removesuffix(".local")
+        return name in {"localhost", own, f"{own}.local"}
+
+
+def body_length(header: str | None) -> int | None:
+    """Content-Length as a size, or None when it is not one (a negative one read until the
+    client hung up)."""
+    try:
+        length = int(header or 0)
+    except ValueError:
+        return None
+    return length if length >= 0 else None
 
 
 def is_local(address: str) -> bool:
@@ -231,6 +258,7 @@ def current(path: Path, blocks: dict[str, ui.Page]) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "painel"
+    timeout = REQUEST_TIMEOUT_SECONDS
 
     def do_GET(self) -> None:
         if not self.allowed():
@@ -257,7 +285,19 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/api/config":
             self.reply_json(404, {"ok": False, "mensagem": "não existe"})
             return
-        length = int(self.headers.get("Content-Length") or 0)
+        # A JSON body cannot be sent cross-site without a CORS preflight, which this server
+        # never answers; a form from another page arrives as text/plain or form-encoded.
+        if not self.headers.get("Content-Type", "").startswith("application/json"):
+            self.reply_json(415, {"ok": False, "mensagem": "só aceito JSON"})
+            return
+        origin = self.headers.get("Origin")
+        if origin and urllib.parse.urlsplit(origin).netloc != self.headers.get("Host"):
+            self.reply_json(403, {"ok": False, "mensagem": "pedido de outra página"})
+            return
+        length = body_length(self.headers.get("Content-Length"))
+        if length is None:
+            self.reply_json(400, {"ok": False, "mensagem": "tamanho inválido"})
+            return
         if length > MAX_BODY:
             self.reply_json(
                 413, {"ok": False, "mensagem": "configuração grande demais"}
@@ -288,10 +328,13 @@ class Handler(BaseHTTPRequestHandler):
         self.reply_json(200, {"ok": True, "mensagem": message})
 
     def allowed(self) -> bool:
-        if is_local(self.client_address[0]):
-            return True
-        self.reply_json(403, {"ok": False, "mensagem": "só na rede de casa"})
-        return False
+        if not is_local(self.client_address[0]):
+            self.reply_json(403, {"ok": False, "mensagem": "só na rede de casa"})
+            return False
+        if not known_host(self.headers.get("Host", "")):
+            self.reply_json(403, {"ok": False, "mensagem": "endereço não reconhecido"})
+            return False
+        return True
 
     def reply_json(self, status: int, payload: dict) -> None:
         self.reply(
@@ -429,15 +472,51 @@ def selftest() -> None:
         server = serve(blocks, path, 0, host="127.0.0.1", find_city=find_city)
         base = f"http://127.0.0.1:{server.server_address[1]}"
 
-        def call(url: str, body: dict | None = None) -> tuple[int, dict]:
+        def call(
+            url: str, body: dict | None = None, headers: dict | None = None
+        ) -> tuple[int, dict]:
             data = None if body is None else json.dumps(body).encode()
+            sent = {"Content-Type": "application/json"} if data else {}
             try:
                 with urllib.request.urlopen(
-                    urllib.request.Request(url, data=data), timeout=5
+                    urllib.request.Request(
+                        url, data=data, headers=sent | (headers or {})
+                    ),
+                    timeout=5,
                 ) as response:
                     return response.status, json.loads(response.read())
             except urllib.error.HTTPError as err:
                 return err.code, json.loads(err.read())
+
+        before = path.read_text()
+        for headers, code, why in (
+            ({"Content-Type": "text/plain"}, 415, "a plain form from another site"),
+            ({"Origin": "http://evil.example"}, 403, "a page on another origin"),
+            ({"Host": "evil.example:8026"}, 403, "DNS rebinding: a foreign host name"),
+        ):
+            status, _ = call(f"{base}/api/config", config, headers)
+            assert status == code, (why, status)
+        assert call(f"{base}/api/config", None, {"Host": "evil.example"})[0] == 403, (
+            "DNS rebinding cannot read the config either"
+        )
+        assert path.read_text() == before, "no refused request touched the file"
+        assert (
+            call(
+                f"{base}/api/config",
+                None,
+                {"Host": f"{socket.gethostname().removesuffix('.local')}.local"},
+            )[0]
+            == 200
+        ), "the Pi's own .local name is accepted"
+        raw = socket.create_connection(("127.0.0.1", server.server_address[1]), 5)
+        raw.sendall(
+            b"POST /api/config HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\nContent-Length: -1\r\n\r\n{}"
+        )
+        assert raw.recv(64).startswith(b"HTTP/1.0 400"), (
+            "a negative length is refused, not read until the client hangs up"
+        )
+        raw.close()
 
         status, payload = call(f"{base}/api/config")
         assert status == 200 and payload["config"]["dados"]["pi"] == 1
