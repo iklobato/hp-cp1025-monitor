@@ -52,6 +52,8 @@ REFRESH_WORKERS = 4
 KDSETMODE, KD_TEXT, KD_GRAPHICS = 0x4B3A, 0, 1
 
 log = logging.getLogger("dashboard")
+# block id -> the drawing error last logged for it; only the display thread draws
+DRAW_FAILURES: dict[str, str] = {}
 
 
 def build_blocks() -> dict[str, ui.Page]:
@@ -178,8 +180,36 @@ def render_screen(
     draw_status(ImageDraw.Draw(image), screens, index, progress, now)
     screen = screens[index]
     for part, box in zip(screen.parts, screen.boxes(CONTENT_BOX)):
-        part.page.compose(image, box, now, part.mode)
+        compose_part(image, part, box, now)
     return image
+
+
+def compose_part(
+    image: Image.Image, part: layout.Part, box: tuple, now: datetime
+) -> None:
+    """Paint one block. A block that fails shows a red error card in its own box: before, one
+    page's bug dropped the whole frame and the screen stayed on the previous one."""
+    try:
+        part.page.compose(image, box, now, part.mode)
+    except (
+        Exception
+    ) as err:  # a page bug must not stop the other blocks from being drawn
+        message = f"{type(err).__name__}: {err}"
+        if DRAW_FAILURES.get(part.block) != message:  # live blocks redraw every second
+            log.exception("drawing failed: %s", part.block)
+            DRAW_FAILURES[part.block] = message
+        draw = ImageDraw.Draw(image)
+        draw.rectangle(box, fill=ui.BACKGROUND)
+        ui.card(draw, box, part.page.name)
+        draw.text(
+            (box[0] + 16, box[1] + 64),
+            ui.fit(f"✘ erro ao desenhar: {message}", ui.font(17), box[2] - box[0] - 32),
+            font=ui.font(17),
+            fill=ui.RED,
+            anchor="ls",
+        )
+    else:
+        DRAW_FAILURES.pop(part.block, None)
 
 
 def render_status(
@@ -194,7 +224,7 @@ def render_block(part: layout.Part, box: tuple, now: datetime) -> Image.Image:
     """One block alone, at its own size, for a live redraw."""
     width, height = box[2] - box[0], box[3] - box[1]
     image = Image.new("RGB", (width, height), ui.BACKGROUND)
-    part.page.compose(image, (0, 0, width, height), now, part.mode)
+    compose_part(image, part, (0, 0, width, height), now)
     return image
 
 
@@ -644,6 +674,40 @@ def selftest(directory: Path) -> None:
         screens[1].parts[1], (950, 72, 1904, 1064), datetime.now(timezone.utc)
     )
     assert block.size == (954, 992)
+
+    def explode(draw, box, now) -> None:
+        raise ValueError("y1 must be greater than or equal to y0")
+
+    broken = StubPage("Quebrado", live=True)
+    broken.draw = explode
+    split = Screen(
+        "Q",
+        20,
+        30,
+        1,
+        "lado",
+        (layout.Part("a", a, "cheio", 1), layout.Part("q", broken, "cheio", 1)),
+    )
+    moment = datetime(2026, 10, 23, 15, 0, tzinfo=timezone.utc)
+    healthy_box, broken_box = split.boxes(CONTENT_BOX)
+    drawn_logs = []
+    handler = logging.Handler()
+    handler.emit = lambda record: drawn_logs.append(record.getMessage())
+    log.addHandler(handler)
+    try:
+        frame = render_screen((split,), 0, 0.0, moment)
+        render_block(split.parts[1], broken_box, moment)
+    finally:
+        log.removeHandler(handler)
+    assert frame.getpixel((healthy_box[0] + 20, healthy_box[1] + 60)) == ui.CARD, (
+        "a block that fails to draw does not take the healthy one with it"
+    )
+    shown = {color for _, color in frame.crop(broken_box).getcolors(1 << 16)}
+    assert ui.RED in shown, "the failing block shows a red error card"
+    assert drawn_logs == ["drawing failed: q"], (
+        "logged once, not on every live redraw",
+        drawn_logs,
+    )
 
     ticks = [0.0]
     calls = []
