@@ -10,7 +10,7 @@ Where to start, for a person or an agent picking this up:
 |---|---|
 | What runs where, and how to rebuild the Pi | [raspberry/README.md](raspberry/README.md) and [raspberry/setup.sh](raspberry/setup.sh) |
 | The status monitor (port 8025): code layout, tests | [../README.md](../README.md) |
-| The HDMI monitor (port 8026): screens, code layout, how to test a change, known bugs | [../pi-dashboard/README.md](../pi-dashboard/README.md) |
+| The HDMI monitor | moved out on 2026-10-25: [pi-painel](https://github.com/iklobato/pi-painel) |
 | Printing from macOS | [../driver/macos/README.md](../driver/macos/README.md) |
 | What is done, what is open, what is unverified | this file: [Done](#done), [Still open](#still-open-in-order), [Known bugs](#known-bugs-not-fixed-yet), [Not verified](#not-verified-yet) |
 
@@ -23,7 +23,7 @@ Where to start, for a person or an agent picking this up:
 | Status reading (LEDM) | works on the Pi: the web dashboard runs there as a service at `http://impressora-pi.local:8025`, one reading every 10 s (about 210 ms each). The terminal and web dashboards still run on a Mac too, when the printer is on its USB |
 | Status verdict | `▲ ATENÇÃO` on 2026-10-24 22:53, with one action: the non-original black and yellow cartridges. Since #15 that alert is a warning, not a permanent red error, and every printer alert shows up in "O que fazer agora". With the printer off when the service starts, the page says `✖ SEM LEITURA` and why, instead of "conectando…" forever |
 | Terminal and web dashboards | done and refactored; 41 tests, all passing, no printer needed |
-| HDMI monitor on the Pi | since 2026-10-23 the Pi also drives a monitor with a carousel (market and rates, news with a short summary per story, weather, fuel and lottery, printer and Pi screens) and a settings page on the home network at port 8026. Code and notes: [../pi-dashboard/README.md](../pi-dashboard/README.md). `setup.sh` installs it; the whole script, with this step, ran on the Pi on 2026-10-24 (exit 0, 1 min 45 s) |
+| HDMI monitor on the Pi | from 2026-10-23 to 2026-10-25 this repo's `pi-dashboard/` drew a carousel on the Pi's monitor. On 2026-10-25 it was replaced by [pi-painel](https://github.com/iklobato/pi-painel) (separate repo, own installer) and removed from the Pi and from `setup.sh` |
 | Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,328 (unchanged from 2026-10-22 22:35 to 2026-10-24 22:53), only that alert |
 
 ## Cartridge history (printing no longer blocked)
@@ -174,6 +174,7 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
     - #18: one block that raised while drawing froze the whole HDMI screen on the previous frame. It now shows a red error card in its own box.
     - #19 and #20 (refactors, no visible change): shared number and loading-text helpers in `ui.py`, and `sources.py` (2,400 lines) split into one module per data source. Proven by 29 renders that are byte-identical before and after.
     - A split of `page_weather.py` and `page_system.py` was started and cancelled by the owner; nothing of it was kept.
+16. **HDMI monitor replaced** (2026-10-25): the redesigned monitor, [pi-painel](https://github.com/iklobato/pi-painel), was installed on the Pi and the old one removed the same night: `dashboard.service`, `~/dashboard` and three backup copies of it, `~/.cache/pi-dashboard` (32 MB) and `/etc/pi-dashboard` (its OpenRouter key was moved to `/etc/painel/painel.env` first). After a reboot at 02:39 the new service was active again at 02:40:27 using 112 MB; this repo's status page and CUPS stayed active. `setup.sh` no longer installs a monitor; `consoleblank=0` is now added by pi-painel's installer.
 
 ## Still open, in order
 
@@ -181,7 +182,7 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 2. **Reinstall the filter on the Mac** if the Mac uses its USB queue again: its installed copy in `/Library/Printers/foo2zjs/` still reads the bare `media` option.
 3. **Move the Mac to the network printer**: delete the Mac's USB queue `HP_CP1025` and add "HP CP1025 @ impressora-pi".
 4. **Finish the Pi** ([raspberry/README.md](raspberry/README.md)): Tailscale (owner logs in once), print access limited to LAN and tailnet, admin over HTTPS, trim services, reserve its IP in the router, power-cycle the printer, a check from the iPhone, and one `setup.sh` run on a blank card.
-5. **HDMI monitor**: the bugs in [Known bugs](#known-bugs-not-fixed-yet) below; measure a full day (memory and summary cost); decide whether its settings page should answer on the tailnet once Tailscale is on (it answers private addresses only). Features chosen by the owner on 2026-10-24 and not started: show the age of each block's data, a strip for urgent items on every screen (strong INMET alert, printer error, watched word in the news), next/pin-screen controls and a screen preview on the settings page, charts from data already downloaded (quote and rate history, radar animation). A visual redesign is being drafted separately.
+5. **HDMI monitor**: moved to [pi-painel](https://github.com/iklobato/pi-painel) on 2026-10-25; what is still open for it is tracked there.
 6. **Optional**: genuine HP 126A black and yellow. Not needed to print, but the printer keeps an `incompatibleConsumable` error and cannot report their level.
 
 ## Known bugs, not fixed yet
@@ -195,14 +196,7 @@ Status monitor (port 8025):
 - An SSE client that stops reading keeps a thread forever (no socket timeout in `web_dashboard`).
 - "fila do Mac pausada" is still the wording on the Pi.
 
-HDMI monitor (port 8026 and the carousel):
-- The weather details block in compact mode, about 900 x 992 px with no data yet, raises `y1 must be greater than or equal to y0` in `draw_alerts` (seen in a render on the Pi). Since #18 it is a red card, not a frozen screen. Other blocks can raise the same way when a stacked split makes them short.
-- Changing a city or the fuel city while that block is refreshing can show the old city's data under the new name until the next refresh (the refresh writes back after `apply_settings` cleared it).
-- If the 8025 monitor stops, the printer block keeps saying "ao vivo" in green with the last reading.
-- One failed Yahoo fetch replaces the market block's last good prices with an error instead of keeping them with their age.
-- Shell commands (`lpstat`, `systemctl`, `apt`) have no timeout; a stuck CUPS keeps the printer block busy.
-- The news summary spend resets to zero if `summaries.json` is corrupt (OpenRouter's own US$ 3 key limit still holds).
-- Higher Selic, IPCA and credit rates are drawn green; fuel uses the opposite colors.
+HDMI monitor: the old code and its known bugs were removed on 2026-10-25; the new monitor is [pi-painel](https://github.com/iklobato/pi-painel).
 
 ## Not verified yet
 
