@@ -19,6 +19,7 @@ CONFIG = Path(
 )
 MODES = ("cheio", "compacto")
 SPLITS = ("lado", "empilhado")
+MIN_SECONDS = 1
 
 
 class ConfigError(Exception):
@@ -87,21 +88,33 @@ def positive(value, where: str) -> float:
     return float(value)
 
 
+def duration(value, where: str) -> float:
+    """A time: at least the 1 s the live blocks use. Less made a block refresh on every 0.5 s
+    scheduler tick (the market asks Yahoo 45 times a pass) or pinned the display thread.
+    """
+    checked = positive(value, where)
+    if checked < MIN_SECONDS:
+        raise ConfigError(
+            f"{where}: precisa ser pelo menos {MIN_SECONDS} s, veio {value!r}"
+        )
+    return checked
+
+
 def parse(text: str, blocks: dict[str, ui.Page]) -> Plan:
     try:
         config = tomllib.loads(text)
     except tomllib.TOMLDecodeError as err:
         raise ConfigError(f"carrossel.toml não é um TOML válido: {err}") from err
     defaults = config.get("padrao", {})
-    default_seconds = positive(defaults.get("na_tela", 45), "padrao.na_tela")
-    default_redraw = positive(defaults.get("redesenho", 30), "padrao.redesenho")
+    default_seconds = duration(defaults.get("na_tela", 45), "padrao.na_tela")
+    default_redraw = duration(defaults.get("redesenho", 30), "padrao.redesenho")
     data_every = {}
     for block, seconds in config.get("dados", {}).items():
         if block not in blocks:
             raise ConfigError(
                 f"dados.{block}: bloco desconhecido; existem: {', '.join(sorted(blocks))}"
             )
-        data_every[block] = positive(seconds, f"dados.{block}")
+        data_every[block] = duration(seconds, f"dados.{block}")
     screens = []
     for number, raw in enumerate(config.get("tela", []), start=1):
         where = f"tela {number} ({raw.get('nome', 'sem nome')})"
@@ -138,9 +151,9 @@ def parse(text: str, blocks: dict[str, ui.Page]) -> Plan:
         screens.append(
             Screen(
                 raw["nome"],
-                positive(raw.get("na_tela", default_seconds), f"{where}: na_tela"),
-                positive(raw.get("redesenho", default_redraw), f"{where}: redesenho"),
-                None if live is None else positive(live, f"{where}: ao_vivo"),
+                duration(raw.get("na_tela", default_seconds), f"{where}: na_tela"),
+                duration(raw.get("redesenho", default_redraw), f"{where}: redesenho"),
+                None if live is None else duration(live, f"{where}: ao_vivo"),
                 split,
                 tuple(parts),
             )
@@ -270,6 +283,14 @@ blocos = [{ bloco = "impressora", tamanho = 0.4 }, { bloco = "pi", modo = "compa
         (
             '[dados]\nclima = 9\n[[tela]]\nnome = "A"\ndivisao = "diagonal"\nblocos = [{ bloco = "clima" }]',
             "divisao",
+        ),
+        (
+            '[dados]\nclima = 0.1\n[[tela]]\nnome = "A"\nblocos = [{ bloco = "clima" }]',
+            "dados.clima: precisa ser pelo menos 1 s",
+        ),
+        (
+            '[dados]\nclima = 9\n[[tela]]\nnome = "A"\nredesenho = 0.5\nblocos = [{ bloco = "clima" }]',
+            "redesenho: precisa ser pelo menos 1 s",
         ),
         ("nome = ", "não é um TOML válido"),
         ("[dados]\nclima = 9", "nenhuma [[tela]]"),
