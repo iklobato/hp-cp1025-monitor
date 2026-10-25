@@ -23,6 +23,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
+import zlib
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -97,7 +98,19 @@ RETRY_BACKOFF_SECONDS = 3
 
 def decoded(body: bytes) -> bytes:
     """g1 sometimes answers gzip-compressed without Content-Encoding."""
-    return gzip.decompress(body) if body.startswith(GZIP_MAGIC) else body
+    if not body.startswith(GZIP_MAGIC):
+        return body
+    try:
+        return gzip.decompress(body)
+    except (OSError, EOFError, zlib.error) as err:
+        raise SourceError("resposta comprimida corrompida", retryable=True) from err
+
+
+def web_address(url: str) -> str:
+    """Feeds hand out picture addresses with raw accents and spaces; http.client sends ASCII
+    only and raised UnicodeEncodeError, which aborted the whole news refresh (2026-10-24).
+    """
+    return urllib.parse.quote(url, safe=":/?#[]@!$&'()*+,;=%~")
 
 
 def fetch_once(url: str, timeout: float, opener=urllib.request.urlopen) -> bytes:
@@ -105,7 +118,9 @@ def fetch_once(url: str, timeout: float, opener=urllib.request.urlopen) -> bytes
         raise SourceError(
             f"endereço inválido: {url[:40]!r}"
         )  # g1 pages declare og:image "None"
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    request = urllib.request.Request(
+        web_address(url), headers={"User-Agent": USER_AGENT}
+    )
     try:
         with opener(request, timeout=timeout) as response:
             return decoded(response.read())
@@ -320,14 +335,21 @@ def thumbnail(
     """The picture cut to fill `size` (center crop), cached on disk by URL so each loads once."""
     path = folder / f"{hashlib.sha1(f'{url}|{size}'.encode()).hexdigest()}.jpg"
     if path.exists():
-        return Image.open(path).convert("RGB")
+        try:
+            return Image.open(path).convert("RGB")
+        except (UnidentifiedImageError, OSError):
+            path.unlink(missing_ok=True)  # cut short by a power loss: fetch it again
     try:
         picture = Image.open(io.BytesIO(fetch(url))).convert("RGB")
     except (UnidentifiedImageError, OSError) as err:
         raise SourceError("imagem ilegível") from err
     picture = ImageOps.fit(picture, size, Image.Resampling.LANCZOS)
     folder.mkdir(parents=True, exist_ok=True)
-    picture.save(path, "JPEG", quality=85)
+    with tempfile.NamedTemporaryFile(
+        "wb", dir=folder, suffix=".tmp", delete=False
+    ) as handle:
+        picture.save(handle, "JPEG", quality=85)
+    Path(handle.name).replace(path)
     return picture
 
 
@@ -1610,6 +1632,16 @@ def selftest() -> None:
             assert str(err) == "imagem ilegível"
         else:
             raise AssertionError("a non-image must fail")
+        (cut_short,) = Path(tmp).glob("*.jpg")
+        cut_short.write_bytes(cut_short.read_bytes()[:200])
+        fetched.clear()
+        assert thumbnail("https://s/p.png", (120, 68), fake, Path(tmp)).size == (
+            120,
+            68,
+        ) and fetched == ["https://s/p.png"], (
+            "a picture cut short on disk (power loss) is fetched again, not raised"
+        )
+        assert not list(Path(tmp).glob("*.tmp")), "no temporary file is left behind"
         later = datetime.now(timezone.utc) + THUMB_KEEP + timedelta(hours=1)
         assert prune_thumbnails(later, Path(tmp)) == 1 and not list(
             Path(tmp).glob("*.jpg")
@@ -2031,6 +2063,29 @@ def selftest() -> None:
         )
         == b"ok"
     ), "a body cut short is tried once more instead of escaping as IncompleteRead"
+    calls.clear()
+    assert (
+        fetch_bytes(
+            "https://s/fotos/Ação São Paulo.jpg",
+            1,
+            opener_factory([b"ok"]),
+            waits.append,
+        )
+        == b"ok"
+    )
+    assert calls == ["https://s/fotos/A%C3%A7%C3%A3o%20S%C3%A3o%20Paulo.jpg"], (
+        "accents and spaces are percent-encoded: http.client sends ASCII only"
+    )
+    calls.clear()
+    fetch_bytes("https://s/a%20b?q=1&r=%C3%A7", 1, opener_factory([b"ok"]))
+    assert calls == ["https://s/a%20b?q=1&r=%C3%A7"], "an encoded address is kept"
+    broken_gzip = [GZIP_MAGIC + b"\x08\x00garbage", GZIP_MAGIC + b"\x08\x00garbage"]
+    try:
+        fetch_bytes("http://x", 1, opener_factory(broken_gzip), waits.append)
+    except SourceError as err:
+        assert err.retryable, "a corrupt gzip body is tried once more"
+    else:
+        raise AssertionError("a corrupt gzip body must fail as a SourceError")
     for body, message in (
         (b"<html>erro</html>", "veio página de erro em vez de dados"),
         (b"  ", "resposta vazia"),
