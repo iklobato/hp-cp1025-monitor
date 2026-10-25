@@ -18,7 +18,7 @@ Monitoring works (terminal and web, about 250 ms per full reading) while the pri
 
 Since the evening of 2026-10-22 the printer sits on a **Raspberry Pi 3 network print server** that reuses the same driver chain (CUPS + foo2zjs, shared as AirPrint). It prints from the network in about 13 to 18 s per page, serves this repo's web dashboard to the home LAN at `http://impressora-pi.local:8025`, installs security updates by itself, and can be rebuilt with `docs/raspberry/setup.sh`; Tailscale and access rules are still to do: [docs/raspberry/README.md](docs/raspberry/README.md). The ordered next steps and what is still unverified are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
 
-The same Pi drives an HDMI monitor with a carousel of market, rates, news, weather, fuel, lottery, printer and Pi screens, set from a page on the home network: [pi-dashboard/README.md](pi-dashboard/README.md).
+The same Pi drives an HDMI monitor. Since 2026-10-25 that monitor is a separate project, [pi-painel](https://github.com/iklobato/pi-painel) (private), installed with its own `deploy/install.sh`; it reads this repo's status page on port 8025 for its printer screen.
 
 The status verdict is `✔ PRONTA`, `▲ ATENÇÃO` or `✖ COM PROBLEMAS`. The non-HP cartridge alert (`incompatibleConsumable`, `nonHPSupplyDetected`, `usedConsumable`) is a warning, because this printer keeps printing with it; every other printer alert labelled Error is an error. Every alert is also listed in "O que fazer agora".
 

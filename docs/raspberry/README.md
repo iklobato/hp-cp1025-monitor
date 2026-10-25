@@ -6,7 +6,7 @@ Goal: every computer and phone prints to the CP1025 over the network instead of 
 Mac / iPhone / Android / Linux  --AirPrint/IPP-->  Raspberry Pi 3 (CUPS + foo2zjs + Avahi)  --USB-->  CP1025
 ```
 
-The Pi also runs this repo's status page (port 8025) and drives an HDMI monitor ([`pi-dashboard/`](../../pi-dashboard/README.md)); `setup.sh` installs all three.
+The Pi also runs this repo's status page (port 8025); `setup.sh` installs both. The HDMI monitor on the same Pi is a separate project since 2026-10-25: [pi-painel](https://github.com/iklobato/pi-painel).
 
 ## Status (last checked 2026-10-24 22:53)
 
@@ -21,7 +21,7 @@ The Pi also runs this repo's status page (port 8025) and drives an HDMI monitor 
 | Survives a reboot | yes (2026-10-22 22:28): back in 57 s with CUPS, Avahi, the queue and the fast job start; jobs start rendering 1 s after they are queued |
 | Updates | security updates install every day by themselves (Debian-Security only); reboot at 04:30 when a patch needs it |
 | Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0). On 2026-10-24 the whole script, with the HDMI monitor step, ran on this Pi with the printer on (exit 0, 1 min 45 s, all three services active after). Since #16 a printer that is off no longer stops the script: it skips only the queue, starts the status page again, and fails at the end (simulated on 2026-10-24, see "Problems found") |
-| HDMI monitor (2026-10-23) | `dashboard.service` draws a carousel on the monitor (tty1, framebuffer) from [`pi-dashboard/`](../../pi-dashboard/README.md); settings page `http://impressora-pi.local:8026`, private addresses only, so the tailnet (100.64.0.0/10) is refused until decided. About 22% of one core on average, 52 to 60 C, no throttling (`throttled=0x0`), 100 to 194 MB of memory with `MALLOC_ARENA_MAX=2`. The news summaries read an OpenRouter key from `/etc/pi-dashboard/openrouter.env` (root, mode 600), a key only for the dashboard with a US$ 3 monthly limit. Installed by `setup.sh` |
+| HDMI monitor (2026-10-23 to 2026-10-25) | `dashboard.service` from `pi-dashboard/` drew a carousel on the monitor; replaced on 2026-10-25 by [pi-painel](https://github.com/iklobato/pi-painel), which is installed by its own `deploy/install.sh`. The old service, `~/dashboard`, its cache and `/etc/pi-dashboard` were removed from the Pi that day |
 | Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
 | Docker | installed for a test on 2026-10-23 and removed the same night (the daemon alone took about 71 MB); the monitor runs as a systemd service |
 | Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card, 15 package updates waiting on 2026-10-24 22:53 (security ones install by themselves; the 15 were not checked one by one) |
@@ -120,7 +120,6 @@ bash setup.sh
 | sources | this repo in `~/hp-cp1025-monitor` (`REPO_REF`, default `main`), foo2zjs at commit `e04290d` in `~/foo2zjs` |
 | driver | builds foo2zjs, `zjsdecode`, `rastertopksm`; installs the filter and its two helpers in `/usr/lib/cups/filter` |
 | PPD | `/usr/local/share/cp1025/HP_CP1025-pi.ppd`: the repo PPD with the Linux filter path, A4 only, CMYK as PPD default |
-| HDMI monitor | runs `pi-dashboard/screen.py selftest` from the repo, copies `pi-dashboard/` to `~/dashboard` (a missing `carrossel.toml` is seeded from `carrossel.example.toml`, an existing one is kept), creates `/etc/pi-dashboard` for the OpenRouter key (the key is added by hand), adds `consoleblank=0` to `/boot/firmware/cmdline.txt` (asks for one reboot when it adds it), installs `dashboard.service` for the admin user. Runs before the queue step, so it is installed even with the printer off |
 | queue | finds the USB URI (`usb://HP/LaserJet%20CP%201025?serial=<serial>`, retried up to 5 times), creates `HP_CP1025` shared, monochrome by default, `retry-job`, system default; `cupsctl --share-printers PreserveJobFiles=No WebInterface=yes`. With the printer off it warns, leaves the queue as it is, and the script carries on and fails at the end |
 | security updates | `20auto-upgrades` and `52cp1025-unattended` in `/etc/apt/apt.conf.d/` |
 | dashboard | `/etc/systemd/system/cp1025-dashboard.service`: `printer_summary.py --web --host 0.0.0.0 --port 8025 --every 10`, as the admin user with the `lp` group (which owns the printer's USB device node) |
@@ -157,7 +156,7 @@ cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py /DevMgmt/ProductStatusDyn.xml
 | With the dashboard reading about once a second, CUPS discovery missed the printer (`lpinfo -v`: 4 of 5 tries) | a reading holds the USB device | the Pi's dashboard reads every 10 s (`--every 10`; 15 of 15 tries then), and `setup.sh` pauses it and retries the lookup | fixed for discovery; whether a job that starts during a reading is delayed was not tested (a page printed fine while it ran) |
 | The dashboard checked a queue called `HP_LaserJet_CP1025` | the name of the old HP queue, deleted on 2026-10-22 | checks `HP_CP1025` | fixed |
 | The default Debian `unattended-upgrades` list also takes point-release updates | `50unattended-upgrades` allows `label=Debian` | `#clear` and list Debian-Security only | fixed |
-| The monitor would blank after 10 minutes, and nothing recorded how that was avoided | `consoleblank=0` had been added by hand to `/boot/firmware/cmdline.txt` on 2026-10-23 | `setup.sh` adds it and asks for one reboot when it does | fixed |
+| The monitor would blank after 10 minutes, and nothing recorded how that was avoided | `consoleblank=0` had been added by hand to `/boot/firmware/cmdline.txt` on 2026-10-23 | `setup.sh` added it until 2026-10-25; now pi-painel's `deploy/install.sh` does | fixed |
 | When the printer is off, `setup.sh` stops at the queue step and leaves the status page (port 8025) stopped | the queue step stops `cp1025-dashboard` before it looks for the printer and exits without starting it again | a missing printer no longer stops the script: it prints a warning, runs every other step (the status page is started again in its own step), and fails at the end saying only the queue is left | fixed |
 
 ## Not verified yet
