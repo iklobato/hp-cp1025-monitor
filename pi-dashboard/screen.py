@@ -23,8 +23,14 @@ from pathlib import Path
 from typing import Callable
 
 import admin
+import city_data
 import fields
+import fuel_data
 import layout
+import lottery_data
+import market_data
+import net
+import news_data
 import page_fuel
 import page_lottery
 import page_market
@@ -32,9 +38,11 @@ import page_news
 import page_rates
 import page_system
 import page_weather
-import sources
+import rates_data
 import summary
+import system_data
 import ui
+import weather_data
 from layout import Plan, Screen
 from PIL import Image, ImageDraw, ImageMath
 
@@ -507,7 +515,7 @@ def preview(directory: Path) -> None:
     now = datetime.now(timezone.utc)
     for index, screen in enumerate(plan.screens):
         render_screen(plan.screens, index, 0.4, now).save(
-            directory / f"{index + 1}-{sources.title_key(screen.name)}.png"
+            directory / f"{index + 1}-{news_data.title_key(screen.name)}.png"
         )
 
 
@@ -539,7 +547,15 @@ class StubPage(ui.Page):
 
 
 def selftest(directory: Path) -> None:
-    sources.selftest()
+    net.selftest()
+    news_data.selftest()
+    market_data.selftest()
+    weather_data.selftest()
+    rates_data.selftest()
+    city_data.selftest()
+    lottery_data.selftest()
+    fuel_data.selftest()
+    system_data.selftest()
     ui.selftest()
     fields.selftest()
     summary.selftest()

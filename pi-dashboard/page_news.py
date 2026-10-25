@@ -15,11 +15,13 @@ from dataclasses import dataclass
 from typing import Callable
 
 import fields
-import sources
+import net
+import news_data
 import summary
 import ui
+from net import SourceError
+from news_data import Feed, Story
 from PIL import Image, ImageDraw
-from sources import Feed, SourceError, Story
 
 WORLD_FEEDS = (
     Feed("G", "g1", "https://g1.globo.com/rss/g1/"),
@@ -84,7 +86,7 @@ FETCH_WORKERS = 8
 def gather_news(feeds: tuple[Feed, ...]) -> tuple[list[Story], list[str]]:
     def outcome(feed: Feed) -> list[Story] | SourceError:
         try:
-            return sources.fetch_stories(feed, STORIES_PER_FEED)
+            return news_data.fetch_stories(feed, STORIES_PER_FEED)
         except SourceError as err:
             return err
 
@@ -130,14 +132,14 @@ class NewsCache:
     def __init__(
         self,
         gather: Callable = gather_news,
-        picture: Callable = sources.thumbnail,
+        picture: Callable = news_data.thumbnail,
         page_image: Callable[[str], str] | None = None,
         summaries: summary.Summaries | None = None,
     ) -> None:
         self.gather, self.picture = gather, picture
         self.page_image = page_image or (
-            lambda link: sources.og_image(
-                sources.fetch_bytes(link).decode("utf-8", errors="replace")
+            lambda link: news_data.og_image(
+                net.fetch_bytes(link).decode("utf-8", errors="replace")
             )
         )
         self.feeds: dict[str, tuple[Feed, ...]] = dict(TOPICS)
@@ -167,7 +169,7 @@ class NewsCache:
             for topic, feeds in topics:
                 fetched[topic], topic_problems = self.gather(feeds)
                 problems += topic_problems
-            unique = sources.unique_stories([fetched[topic] for topic, _ in topics])
+            unique = news_data.unique_stories([fetched[topic] for topic, _ in topics])
             stories = {
                 topic: found or self.stories.get(topic, [])
                 for (topic, _), found in zip(topics, unique)
@@ -179,7 +181,7 @@ class NewsCache:
                 shown.append(feature)
             problems += self.summaries.fill(shown, SUMMARY_CHARS, self.fits, now)
             self.stories, self.problems, self.fetched_at = stories, problems, now
-            sources.prune_thumbnails(now)
+            news_data.prune_thumbnails(now)
         finally:
             self.lock.release()
 
@@ -228,7 +230,7 @@ def picture_key(story: Story, size: tuple) -> tuple[str, tuple]:
 
 
 def story_meta(story: Story, now: datetime) -> str:
-    return f"{story.feed.label} · {sources.clock(story.published, now)} · {sources.short_age(now - story.published)}"
+    return f"{story.feed.label} · {net.clock(story.published, now)} · {net.short_age(now - story.published)}"
 
 
 @dataclass(frozen=True)

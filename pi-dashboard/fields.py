@@ -165,7 +165,7 @@ class Field:
 @dataclass(frozen=True)
 class CityFields:
     """Fields of one city: the page asks only for the name, the settings page fills the rest
-    from it (sources.find_city). ibge is empty when the block does not need the code."""
+    from it (city_data.find_city). ibge is empty when the block does not need the code."""
 
     name: str
     latitude: str

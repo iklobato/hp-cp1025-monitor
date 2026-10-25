@@ -4,7 +4,7 @@ GET /api/config returns carrossel.toml as JSON plus the blocks that exist; POST 
 takes the same JSON back, writes it as TOML, checks it with the same rules the carousel uses
 (layout.parse) and only then replaces the file, keeping the previous one as .bak. The
 carousel notices the new file at its next screen switch (layout.Watcher). A city whose name
-changed gets its coordinates (and IBGE code) looked up before the check (sources.find_city).
+changed gets its coordinates (and IBGE code) looked up before the check (city_data.find_city).
 
 Anyone outside a private address range gets 403: the Pi also has a public IPv6 address, and
 the server listens on IPv4 only besides.
@@ -25,9 +25,10 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import city_data
 import fields
 import layout
-import sources
+import net
 import ui
 
 PORT = 8026
@@ -196,7 +197,7 @@ def locate(
                 continue
             try:
                 place = find(typed)
-            except sources.SourceError as err:
+            except net.SourceError as err:
                 raise layout.ConfigError(f"blocos.{block}.{city.name}: {err}") from err
             values |= {
                 city.name: place.name,
@@ -210,7 +211,7 @@ def locate(
 
 
 def save(
-    config: dict, path: Path, blocks: dict[str, ui.Page], find=sources.find_city
+    config: dict, path: Path, blocks: dict[str, ui.Page], find=city_data.find_city
 ) -> tuple[layout.Plan, list[str]]:
     """Write the new file only if the carousel would accept it; the old one stays as .bak."""
     config, found = locate(table(config, "configuração"), path, blocks, find)
@@ -360,7 +361,7 @@ def serve(
     path: Path,
     port: int,
     host: str = "0.0.0.0",
-    find_city=sources.find_city,
+    find_city=city_data.find_city,
 ) -> ThreadingHTTPServer:
     server = ThreadingHTTPServer((host, port), Handler)
     server.blocks, server.config_path, server.save_lock = blocks, path, threading.Lock()
@@ -388,11 +389,11 @@ def selftest() -> None:
     blocks["tempo"].cities = (fields.CityFields("cidade", "lat", "lon", "ibge"),)
     lookups = []
 
-    def find_city(typed: str) -> sources.City:
+    def find_city(typed: str) -> city_data.City:
         lookups.append(typed)
         if typed == "Atlântida":
-            raise sources.SourceError("não achei a cidade 'Atlântida'")
-        return sources.City("Sorocaba", "SP", "3552205", -23.5, -47.5)
+            raise net.SourceError("não achei a cidade 'Atlântida'")
+        return city_data.City("Sorocaba", "SP", "3552205", -23.5, -47.5)
 
     assert is_local("192.168.1.10") and is_local("127.0.0.1") and is_local("10.0.0.2")
     assert not is_local("8.8.8.8") and not is_local("100.64.0.1"), (

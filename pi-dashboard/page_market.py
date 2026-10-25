@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import fields
-import sources
+import market_data
+import net
 import ui
+from market_data import PERIODS, Series
+from net import SourceError
 from PIL import Image, ImageDraw
-from sources import PERIODS, Series, SourceError
 
 
 @dataclass(frozen=True)
@@ -146,7 +148,7 @@ Outcome = Series | SourceError
 
 
 def gather_quotes(
-    quotes: tuple[Quote, ...], now: datetime, fetch=sources.fetch_series
+    quotes: tuple[Quote, ...], now: datetime, fetch=market_data.fetch_series
 ) -> tuple[dict[str, list[Outcome]], list[str]]:
     def outcome(job: tuple) -> Outcome:
         symbol, period = job
@@ -179,7 +181,7 @@ def change_text(series: Series) -> str:
 
 def old_quote_note(series: Series, now: datetime) -> str:
     """Empty while the quote is from today; otherwise when the last trade happened."""
-    stamp = sources.clock(series.traded_at, now)
+    stamp = net.clock(series.traded_at, now)
     return "" if len(stamp) <= 5 else f"último pregão {stamp}"
 
 
@@ -220,7 +222,7 @@ def chips(
 def movement(change: float) -> tuple[str, tuple]:
     """'▲ +1,78%' and its color; the arrow follows the number shown, so +0,00% gets none."""
     shown = round(change * 100, 2)
-    return f"{ui.arrow(shown)} {sources.br_percent(change)}", ui.trend_color(shown)
+    return f"{ui.arrow(shown)} {net.br_percent(change)}", ui.trend_color(shown)
 
 
 def change_cell(draw, x: float, y: float, label: str, outcome: Outcome, face) -> None:
@@ -278,7 +280,7 @@ def draw_highlight(
         )
         draw.text(
             (left + pad, top + 90),
-            sources.br_number(day.price * quote.scale),
+            net.br_number(day.price * quote.scale),
             font=ui.font(44, bold=True),
             fill=ui.TEXT,
             anchor="ls",
@@ -348,7 +350,7 @@ def draw_quote_rows(
         if not isinstance(day, SourceError):
             draw.text(
                 (price_right, row_top + middle),
-                sources.br_number(day.price * quote.scale),
+                net.br_number(day.price * quote.scale),
                 font=ui.font(19, bold=True),
                 fill=ui.TEXT,
                 anchor="rs",
@@ -728,5 +730,5 @@ def selftest_world() -> Image.Image:
     }
     image = Image.new("RGB", (1888, 992), ui.BACKGROUND)
     page.draw(ImageDraw.Draw(image), (0, 0, 1888, 992), now)
-    assert sources.br_number(0.0321 * 100) == "3,2100"
+    assert net.br_number(0.0321 * 100) == "3,2100"
     return image

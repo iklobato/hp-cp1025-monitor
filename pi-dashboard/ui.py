@@ -4,8 +4,8 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
+from news_data import Feed
 from PIL import Image, ImageDraw, ImageFont
-from sources import Feed
 
 BACKGROUND = (13, 17, 23)
 CARD = (22, 27, 34)
@@ -128,7 +128,7 @@ def arrow(change: float) -> str:
 
 
 def decimal(value: float, places: int) -> str:
-    """Brazilian decimal comma: 6,30 / 0,1 (no thousands separator; see sources.br_number)."""
+    """Brazilian decimal comma: 6,30 / 0,1 (no thousands separator; see net.br_number)."""
     return f"{value:.{places}f}".replace(".", ",")
 
 
