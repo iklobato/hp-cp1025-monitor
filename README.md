@@ -20,6 +20,10 @@ Since the evening of 2026-10-22 the printer sits on a **Raspberry Pi 3 network p
 
 The same Pi drives an HDMI monitor with a carousel of market, rates, news, weather, fuel, lottery, printer and Pi screens, set from a page on the home network: [pi-dashboard/README.md](pi-dashboard/README.md).
 
+The status verdict is `✔ PRONTA`, `▲ ATENÇÃO` or `✖ COM PROBLEMAS`. The non-HP cartridge alert (`incompatibleConsumable`, `nonHPSupplyDetected`, `usedConsumable`) is a warning, because this printer keeps printing with it; every other printer alert labelled Error is an error. Every alert is also listed in "O que fazer agora".
+
+Picking this up (person or agent): start at [docs/FINDINGS.md](docs/FINDINGS.md#status-last-checked-2026-10-24-2253), which says where everything runs, what is done, what is open, the known bugs and what is still unverified.
+
 ## Requirements
 
 - macOS (tested on 14.6.1, Intel) or Linux (tested on Raspberry Pi OS Trixie). The USB hub-path panel uses `ioreg` and is empty on Linux; everything else is plain libusb. On Linux the kernel `usblp` driver must not hold the printer (see `docs/raspberry/setup.sh`).
@@ -99,7 +103,7 @@ hpstatus (UsbPrinter, LedmClient)  ->  printer_model (PrinterReader -> Report)  
 | `dashboard.py` | `rich` terminal rendering only |
 | `web_dashboard.py` + `dashboard.html` | local web server (SSE) and the page, which only lays out pre-formatted strings |
 | `printer_summary.py` | CLI entry point |
-| `test_printer_summary.py` | tests; run with `python3 test_printer_summary.py` (no printer needed: USB, `ioreg` and `lpstat` are faked) |
+| `test_printer_summary.py` | 41 tests; run with `python3 -m pytest -q test_printer_summary.py` (no printer needed: USB, `ioreg` and `lpstat` are faked). If a globally installed pytest plugin breaks the run, add `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` |
 
 Dump a raw LEDM resource:
 

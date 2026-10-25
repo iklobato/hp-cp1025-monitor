@@ -36,6 +36,20 @@ To change it safely: copy the folder to a scratch directory on the Pi, run `scre
 
 Data is cached in `~/.cache/pi-dashboard/`. Summaries are kept in `summaries.json` there, with what was spent each month. The big files that change rarely (the 14.6 MB Tesouro file, the ANP weekly surveys) are kept in `downloads/` for 12 hours and 7 days, so a restart does not download them again; a file is kept only after it was read fine.
 
+## Working on this code (read before changing it)
+
+How a change was made and checked on 2026-10-24 (PRs #14 to #20). Follow it so a change does not break the monitor in the house.
+
+- **Where things run.** The code runs only on the Pi (`ssh impressora`): the DejaVu fonts, `/dev/fb0` and the `vcgencmd`/`systemctl` readings exist only there. On a Mac the data modules' selftests run (`net`, `news_data`, `market_data`, `weather_data`, `rates_data`, `city_data`, `lottery_data`, `fuel_data`, `system_data`, `summary`, `fields`, `layout`, `admin`); anything that draws text fails with `OSError: cannot open resource`, which only means the fonts are missing.
+- **Test on a copy, never on `~/dashboard` first.** Copy the folder to `/tmp/dash-stage-<name>` on the Pi and run `python3 screen.py selftest /tmp/dash-stage-<name>/out`. Check the exit code, not the text: a `grep` on the output once let a failure through. The selftest also saves one PNG per block in `out/`: look at them.
+- **Refactors must not move a pixel.** Run the selftest on the old and the new code into two folders and compare every PNG with `cmp`. Also draw every block with no data yet, full and compact, through `screen.compose_part` (the "carregando…" state), before and after. The renders are deterministic: the same code gives byte-identical PNGs.
+- **Bug fixes start with a selftest case that fails on the old code.** Prove it fails, then fix.
+- **The settings page without touching the real config.** From the stage folder: `admin.serve(screen.build_blocks(), Path("<copy of carrossel.toml>"), 8027)`, then try it from a browser on the LAN. Stop it by its pid (`ss -ltnpH "sport = :8027"`); `pkill -f` over `ssh` matches the ssh command itself and kills the session.
+- **Install.** Back up the files being replaced, copy them into `~/dashboard`, `sudo systemctl restart dashboard` (the screen is blank for about 20 s), then check `systemctl is-active dashboard` and `journalctl -u dashboard --since "-1min"` for `ERROR`/`Traceback`. A file removed from the repo must also be deleted from `~/dashboard`, because `setup.sh` copies with `cp -r` and never deletes.
+- **See the real screen.** Read the framebuffer on the Pi: `Image.frombytes("RGB", (1920, 1080), open("/dev/fb0", "rb").read(1920 * 1080 * 2), "raw", "BGR;16")`. `screen.py preview DIR` saves every screen with live data (about 65 s, and it calls the real sources).
+- **Formatting.** The repo uses `ruff format` and `ruff check` (ruff 0.13). An editor that runs isort or black reformats lines that are not part of the change; put those lines back so the diff holds only the change.
+- **House rules.** No `subprocess` (shell commands go through `system_data.run_command`: `os.system` with output to a file). No numpy. The repo is public: no personal city, word, address or key in code, tests or docs; personal values live only in the Pi's `carrossel.toml`. Tests use Campinas, Sorocaba and São Paulo.
+
 ## Container (optional, not used on the Pi)
 
 `Dockerfile` builds the same code with Pillow and the DejaVu fonts; the image holds no config. The Pi runs the systemd service instead: in a test on 2026-10-23 the Docker daemon alone took about 71 MB of the Pi's 905 MB, and four blocks of the Pi screen stay empty in a container. The image is not published.
@@ -54,6 +68,14 @@ docker run -d --name dashboard --user 0:0 --cap-add SYS_TTY_CONFIG \
 - It runs as root: the `dashboard` user cannot open `/dev/tty1` (`620 root:tty`).
 - Empty in a container: print queue (`lpstat`), power (`vcgencmd`), services (`systemctl`) and journal (`journalctl`). Ports, connections and processes show only the container's own unless it runs with `--network host` and `--pid host`.
 - A run as root leaves root-owned files in the cache folder: `sudo chown -R $USER: ~/.cache/pi-dashboard` before going back to the service.
+
+## How it runs
+
+- `screen.py run` builds every block once (`build_blocks`: one `ui.Page` object per block id named in `carrossel.toml`), reads the plan (`layout.load`), starts the settings page thread (port 8026), the `Refresher` thread and the display loop (`Carousel.run`).
+- **Data:** the `Refresher` calls each block's `refresh(now)` on its own interval (`[dados]` in the toml) in a pool of 4 threads; a block still busy is skipped, so a slow download never delays the 1 s Pi readings. `refresh()` replaces whole attributes, never mutates them, so the display thread always reads a complete snapshot. A source that fails is recorded in the block's `problems()`, logged once when it starts and once when it clears, and shown in red in the status bar.
+- **Display:** each screen stays `na_tela` seconds and is fully redrawn every `redesenho` seconds; blocks marked live (printer, Pi) are redrawn every `ao_vivo` seconds, and only when their `live_key()` changed; the progress line in the status bar moves every 2 s; the next screen is drawn 4 s before the switch. Each block is painted on its own (`compose_part`): a block that raises shows a red error card in its box and the rest of the screen draws as usual.
+- **Config reload:** a saved `carrossel.toml` is picked up at the next screen switch; a file the rules reject is logged and the old plan stays.
+- **Printer block:** reads the 8025 monitor's `/api/status` every second, the monitor's `history.jsonl` (toner, pages per day) and `lpstat` (queue, jobs) every 30 s, and keeps a copy of the last full reading in `printer-status.json` (at most once a minute) for when the printer is off.
 
 ## Files
 
@@ -91,11 +113,20 @@ docker run -d --name dashboard --user 0:0 --cap-add SYS_TTY_CONFIG \
 - Memory grew without stopping: 306 MB to 599 MB in 61 minutes, about 75 MB every 10 minutes. The same work in the main thread stayed flat and grew only in new threads, so the cause is glibc keeping one memory pool per thread. With `MALLOC_ARENA_MAX=2` in `dashboard.service` one process stayed between 100 and 194 MB for 2 h 23 min.
 - Drawing is not what makes the carousel slow: a full screen takes at most about 1 s of CPU (about 0.4 s of it is the color conversion for the framebuffer) and is drawn 4 s before it shows.
 - Redrawing half the screen and converting it costs about 0.3 s of CPU on a Pi 3, so live blocks redraw only when their data changed (the printer) or every second (the Pi).
+- A feed gave a picture link with raw accents; Python's HTTP client sends ASCII only and raised `UnicodeEncodeError`, which is not an `OSError`, so it escaped `fetch_once` and aborted the whole news refresh (3 times on 2026-10-24, 12:25 to 12:45). Links are percent-encoded now (#14). Same family: a corrupt gzip body raises `EOFError` or `zlib.error`, now a retried source error. Rule from #9 and #14: any new error type a fetch can raise must become a `SourceError` in `net.fetch_once`, or one bad item stops a whole block.
+- Thumbnails were written straight to their final name; a power cut mid-write left a cut file that broke every news refresh until it aged out after 3 days. They go through a temporary file now, and a cut file found on disk is fetched again (#14).
+- One block raising while drawing used to drop the whole frame: the monitor kept the previous screen while the status bar named the new one (#18 fixed it, see "How it runs").
+- The settings page trusted any caller with a private address: any website open on a phone at home could post a new config, and `Content-Length: -1` passed the size check and was read until the client hung up (#17 fixed both).
 
-## Status (2026-10-23 23:47) and what is still open
+## Status (2026-10-24 22:53) and what is still open
 
-- Running on the Pi since 2026-10-23; `main` is the code on it.
-- Measured: about 22% of one core on average over one carousel lap; the Pi at 52 to 60 C with no throttling; the dashboard process between 100 and 194 MB over 2 h 23 min with `MALLOC_ARENA_MAX=2`. Over a full day it is not measured yet.
-- Summaries: 117 kept, US$ 0.0017 spent in October by 23:47 (93 of them and US$ 0.00125 in the first 2 h 23 min, including the first fill of every story on screen). From 20:47 to 23:16 every summary failed with HTTP 401; since 23:16 they run on a key only for the dashboard with a US$ 3 monthly limit on OpenRouter's side too, and none failed. A full day is not measured yet. Some summaries almost repeat the title.
-- Not seen yet: the printer screen with a full reading (the printer was off the whole time).
-- Open: measure a full day (memory and summary cost) and fix the prompt if summaries keep repeating the title; decide whether the settings page should answer on the tailnet once Tailscale is on; record the underlying network error when a download fails ("sem conexao" twice right after a restart, cause unknown); the city name is drawn twice on the map for a big city that the map already labels; the "pages per day" line has no data yet.
+- Running on the Pi since 2026-10-23; `main` is the code on it (PR #20 installed 2026-10-24, old `sources.py` deleted from `~/dashboard`). All 5 screens were captured from the framebuffer on 2026-10-24 between 21:10 and 21:18 and drew complete.
+- Measured: about 22% of one core on average over one carousel lap (2026-10-23); the Pi at 49 to 60 C with no throttling (`throttled=0x0`); the dashboard process between 100 and 194 MB over 2 h 23 min with `MALLOC_ARENA_MAX=2`, 191 MB 14 min after a restart on 2026-10-24. The service was restarted many times on 2026-10-24 for installs, so a full day is still not measured.
+- Summaries: US$ 0.0089 spent in October by 2026-10-24 22:53 (`summaries.json`), on the dashboard's own key with a US$ 3 monthly limit. Some summaries almost repeat the title.
+- Logged warnings on 2026-10-24 come from the sources, not the code: Caixa Super Sete HTTP 500, Banco Central sometimes answering an HTML error page, Hacker News 502 once.
+- Not seen yet: the printer screen with a full reading (it was captured with the printer off; the printer was switched on later).
+- Open, in order:
+  1. The bugs listed in [docs/FINDINGS.md, Known bugs](../docs/FINDINGS.md#known-bugs-not-fixed-yet) (weather details crash in a short compact box, settings change racing a refresh, printer block "ao vivo" when 8025 is down, market losing its last prices on one failed fetch, shell commands without timeout).
+  2. Features chosen on 2026-10-24, not started: the age of each block's data on screen; a strip for urgent items on every screen; next/pin-screen buttons and a screen preview on the settings page; charts from data already downloaded (`Series.closes`, the rates windows' points, `radar.past` for an animated radar). A visual redesign is being drafted separately; port it with every value showing its unit and every card showing when its data is from.
+  3. Splitting `page_weather.py` (about 1,550 lines) and `page_system.py` (about 1,450 lines) was started and cancelled on 2026-10-24; nothing was kept. Ask before picking it up again.
+  4. Measure a full day (memory and summary cost) and fix the prompt if summaries keep repeating the title; decide whether the settings page should answer on the tailnet once Tailscale is on; record the underlying network error when a download fails ("sem conexao" twice right after a restart, cause unknown); the city name is drawn twice on the map for a big city that the map already labels; the "pages per day" line has no data yet.

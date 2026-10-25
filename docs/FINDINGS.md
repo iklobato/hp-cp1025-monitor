@@ -2,18 +2,29 @@
 
 Notes from getting a USB-connected CP1025 working on macOS 14.6.1 (Intel), October 2026. Numbers are what was measured on this unit; dates are when they were measured.
 
-## Status (last checked 2026-10-23 23:47)
+## Status (last checked 2026-10-24 22:53)
+
+Where to start, for a person or an agent picking this up:
+
+| Need | Read |
+|---|---|
+| What runs where, and how to rebuild the Pi | [raspberry/README.md](raspberry/README.md) and [raspberry/setup.sh](raspberry/setup.sh) |
+| The status monitor (port 8025): code layout, tests | [../README.md](../README.md) |
+| The HDMI monitor (port 8026): screens, code layout, how to test a change, known bugs | [../pi-dashboard/README.md](../pi-dashboard/README.md) |
+| Printing from macOS | [../driver/macos/README.md](../driver/macos/README.md) |
+| What is done, what is open, what is unverified | this file: [Done](#done), [Still open](#still-open-in-order), [Known bugs](#known-bugs-not-fixed-yet), [Not verified](#not-verified-yet) |
 
 | Area | State |
 |---|---|
-| Where the printer is | **on the Raspberry Pi 3's USB** since about 19:20 on 2026-10-22, no longer on the Mac |
+| Where the printer is | **on the Raspberry Pi 3's USB** since about 19:20 on 2026-10-22, no longer on the Mac. Switched on and read fine on 2026-10-24 from 21:35 |
 | Printing | **works over the network** through the Pi (CUPS + the same foo2zjs driver chain, rebuilt on Linux): 11 pages printed from the Pi, an Android phone and a second network client, about 13 to 20 s per one-page job. The Pi survives a reboot, installs security updates by itself, and can be rebuilt with `setup.sh`. Phone jobs now come out on A4 and in color when asked (job 14, 21:36). Before that it worked from the Mac over USB (first page 16:01). How color looks on paper is not reported yet. Details: [raspberry/README.md](raspberry/README.md) |
 | Network queue | `HP_CP1025` on `impressora-pi.local`, shared as AirPrint ("HP CP1025 @ impressora-pi"), A4, black and white by default; status page `http://impressora-pi.local:631/jobs?which_jobs=all` |
 | CUPS queue on the Mac | `HP_CP1025` (USB) still exists but no longer reaches the printer; to be replaced by the network printer. The HP CP102x driver files stay in `/Library/Printers/hp-cp1020-backup-20261022/` |
 | Status reading (LEDM) | works on the Pi: the web dashboard runs there as a service at `http://impressora-pi.local:8025`, one reading every 10 s (about 210 ms each). The terminal and web dashboards still run on a Mac too, when the printer is on its USB |
-| Terminal and web dashboards | done and refactored; 38 tests, all passing, no printer needed |
-| HDMI monitor on the Pi | since 2026-10-23 the Pi also drives a monitor with a carousel (market and rates, news with a short summary per story, weather, fuel and lottery, printer and Pi screens, 30 s each) and a settings page on the home network at port 8026. Code and notes: [../pi-dashboard/README.md](../pi-dashboard/README.md). `setup.sh` installs it (only that step was run on the Pi; the whole script was not run again) |
-| Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,328 at 22:35, only that alert |
+| Status verdict | `▲ ATENÇÃO` on 2026-10-24 22:53, with one action: the non-original black and yellow cartridges. Since #15 that alert is a warning, not a permanent red error, and every printer alert shows up in "O que fazer agora". With the printer off when the service starts, the page says `✖ SEM LEITURA` and why, instead of "conectando…" forever |
+| Terminal and web dashboards | done and refactored; 41 tests, all passing, no printer needed |
+| HDMI monitor on the Pi | since 2026-10-23 the Pi also drives a monitor with a carousel (market and rates, news with a short summary per story, weather, fuel and lottery, printer and Pi screens) and a settings page on the home network at port 8026. Code and notes: [../pi-dashboard/README.md](../pi-dashboard/README.md). `setup.sh` installs it; the whole script, with this step, ran on the Pi on 2026-10-24 (exit 0, 1 min 45 s) |
+| Cartridges | black and yellow are non-HP; the printer still flags them `incompatibleConsumable` (Error) but prints anyway. Total pages 1,328 (unchanged from 2026-10-22 22:35 to 2026-10-24 22:53), only that alert |
 
 ## Cartridge history (printing no longer blocked)
 
@@ -155,14 +166,43 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
 13. **HDMI monitor on the Pi** (2026-10-23): a carousel drawn straight into the framebuffer, set from a page on the home network, with its own screen for this printer (verdict, toner, events, USB) and for the Pi. The code is in `pi-dashboard/` with personal values kept out of the repo, and big downloads are kept on disk so a restart does not fetch them again. Later the same day: market and rates share one screen with numbers instead of charts; each news story gets a summary in Portuguese from a cheap model on OpenRouter (capped at US$ 3 a month, US$ 0.00125 for the first 93); memory that grew to 599 MB in an hour now stays between 100 and 194 MB (`MALLOC_ARENA_MAX=2`); screens switch every 30 s.
 14. **Monitor fixes and rebuild** (2026-10-23 night): the news screen had stopped updating 7 times that day because one news page that arrived cut short (`IncompleteRead`) aborted the whole refresh; it is now retried like any network error (0 failures from 22:10 to 23:47). The settings page was cut from 6,277 px to 1,064 px tall: screens and blocks fold, sizes are percents, stock lists are one line each, and a city is typed by name (the page finds its IBGE code and coordinates). The news summaries had failed with HTTP 401 since 20:47; they run on a key made only for the dashboard, capped at US$ 3 a month, since 23:16. The Dockerfile is kept as an option, the Pi stays on systemd and Docker was removed from it (about 71 MB). `setup.sh` now installs the monitor.
 
+15. **Code review and fixes** (2026-10-24): the whole code was read end to end (status monitor, HDMI monitor data sources, screens and settings page) and checked against the Pi's logs and screens. Fixed and installed on the Pi the same night, one PR each:
+    - #14: a picture link with accents raised `UnicodeEncodeError` and aborted the whole news refresh (3 times that day). Links are now percent-encoded, a broken gzip answer is a retried source error, and thumbnails are written through a temporary file, so a picture cut short by a power cut no longer breaks the news for 3 days.
+    - #15: the non-HP cartridge alert made the status verdict red forever while "O que fazer agora" said nothing to do. That alert is now a warning, and every alert is listed as an action. The page no longer sits on "conectando…" when the printer was off at start, and an unexpected error no longer kills the reader thread silently.
+    - #16: `setup.sh` with the printer off left the status page stopped and skipped later steps. It now runs every step, warns, and fails at the end saying only the queue is left. The whole script ran on the Pi with the printer on (exit 0, 1 min 45 s).
+    - #17: the settings page (8026) accepted saves from any website open at home and could be read through DNS rebinding; a `Content-Length` of -1 passed its size check. It now checks Host, Origin and JSON, times out idle connections, and every time in `carrossel.toml` must be at least 1 s.
+    - #18: one block that raised while drawing froze the whole HDMI screen on the previous frame. It now shows a red error card in its own box.
+    - #19 and #20 (refactors, no visible change): shared number and loading-text helpers in `ui.py`, and `sources.py` (2,400 lines) split into one module per data source. Proven by 29 renders that are byte-identical before and after.
+    - A split of `page_weather.py` and `page_system.py` was started and cancelled by the owner; nothing of it was kept.
+
 ## Still open, in order
 
 1. **Look at the color page** the phone printed (job 14, 2026-10-22 21:36): it went out as A4 CMYK, the colors and the dither are not judged yet.
 2. **Reinstall the filter on the Mac** if the Mac uses its USB queue again: its installed copy in `/Library/Printers/foo2zjs/` still reads the bare `media` option.
 3. **Move the Mac to the network printer**: delete the Mac's USB queue `HP_CP1025` and add "HP CP1025 @ impressora-pi".
 4. **Finish the Pi** ([raspberry/README.md](raspberry/README.md)): Tailscale (owner logs in once), print access limited to LAN and tailnet, admin over HTTPS, trim services, reserve its IP in the router, power-cycle the printer, a check from the iPhone, and one `setup.sh` run on a blank card.
-5. **HDMI monitor**: measure a full day (memory and summary cost), look at its printer screen with the printer on (a full reading has not been shown yet), and decide whether its settings page should answer on the tailnet once Tailscale is on (it answers private addresses only).
+5. **HDMI monitor**: the bugs in [Known bugs](#known-bugs-not-fixed-yet) below; measure a full day (memory and summary cost); decide whether its settings page should answer on the tailnet once Tailscale is on (it answers private addresses only). Features chosen by the owner on 2026-10-24 and not started: show the age of each block's data, a strip for urgent items on every screen (strong INMET alert, printer error, watched word in the news), next/pin-screen controls and a screen preview on the settings page, charts from data already downloaded (quote and rate history, radar animation). A visual redesign is being drafted separately.
 6. **Optional**: genuine HP 126A black and yellow. Not needed to print, but the printer keeps an `incompatibleConsumable` error and cannot report their level.
+
+## Known bugs, not fixed yet
+
+Found in the 2026-10-24 review. Each was read in the code; the ones marked "seen" also showed on the Pi.
+
+Status monitor (port 8025):
+- The run-out forecast uses the whole history from its first to its last change and accepts a single page as a rate (`history.forecast`), so it gives far-off dates. Seen: "0.5 pág./dia (1 em 2 dias)" on 2026-10-24.
+- A reading where one LEDM document failed is still saved to `history.jsonl`, and the change feed then says "alerta resolvido" and "novo alerta" for the same alert. With the door open the feed says "nível 100% → None%".
+- `history.jsonl` grows without a limit and is read whole on every reading.
+- An SSE client that stops reading keeps a thread forever (no socket timeout in `web_dashboard`).
+- "fila do Mac pausada" is still the wording on the Pi.
+
+HDMI monitor (port 8026 and the carousel):
+- The weather details block in compact mode, about 900 x 992 px with no data yet, raises `y1 must be greater than or equal to y0` in `draw_alerts` (seen in a render on the Pi). Since #18 it is a red card, not a frozen screen. Other blocks can raise the same way when a stacked split makes them short.
+- Changing a city or the fuel city while that block is refreshing can show the old city's data under the new name until the next refresh (the refresh writes back after `apply_settings` cleared it).
+- If the 8025 monitor stops, the printer block keeps saying "ao vivo" in green with the last reading.
+- One failed Yahoo fetch replaces the market block's last good prices with an error instead of keeping them with their age.
+- Shell commands (`lpstat`, `systemctl`, `apt`) have no timeout; a stuck CUPS keeps the printer block busy.
+- The news summary spend resets to zero if `summaries.json` is corrupt (OpenRouter's own US$ 3 key limit still holds).
+- Higher Selic, IPCA and credit rates are drawn green; fuel uses the opposite colors.
 
 ## Not verified yet
 
@@ -171,7 +211,10 @@ For the Pi's own open questions (reboot, color on paper, iPhone, Tailscale) see 
 - Why the printer refused every page on 2026-10-21 and accepted them on 2026-10-22 with the same cartridge alert.
 - Color printing on paper, and the color quality of the plain Bayer dither (Mac) and of `gstoraster`'s output (Pi).
 - The live change-feed panel with a real change. The diff logic is tested with simulated readings, and history.jsonl did record the real reseating transitions above, but nobody watched the panel while it happened.
-- The run-out forecast: it needs at least a day of real printing in the history.
+- The run-out forecast with a day of real printing (see the forecast bug above).
+- The HDMI printer screen's new amber verdict color: it reads the same `severity` field as the web page, which was checked, but that screen was not captured after #15.
+- `setup.sh` with the printer really switched off: on 2026-10-24 it was simulated with a copy of the script whose USB search never matches.
+- The settings page from Safari and Firefox after #17 (checked with Chromium and `curl` only).
 - The meaning of the `99.xxxx` event codes.
 - The role of interrupt endpoint `0x83`: inferred from its interface class and the event capabilities, never captured.
 - That "Mrvl" in the server header means a Marvell controller: inferred from the name only.

@@ -8,7 +8,7 @@ Mac / iPhone / Android / Linux  --AirPrint/IPP-->  Raspberry Pi 3 (CUPS + foo2zj
 
 The Pi also runs this repo's status page (port 8025) and drives an HDMI monitor ([`pi-dashboard/`](../../pi-dashboard/README.md)); `setup.sh` installs all three.
 
-## Status (last checked 2026-10-23 23:47)
+## Status (last checked 2026-10-24 22:53)
 
 | Area | State |
 |---|---|
@@ -17,14 +17,14 @@ The Pi also runs this repo's status page (port 8025) and drives an HDMI monitor 
 | Login | `ssh impressora` from the Mac (key `~/.ssh/impressora`, user `iklo`); SSH password login is off; `sudo` without password |
 | Printing | **works over the network.** Queue `HP_CP1025` on the Pi's USB, shared, shown as "HP CP1025 @ impressora-pi" in AirPrint. 11 pages printed by 22:35 (jobs 1 to 7, 14 and 16, from the Pi itself, an Android phone and a second network client; jobs 8 to 13 and 15 went to a test queue, not to paper); printer page counter went 1,317 to 1,328. The last phone job (14, 21:36) asked for color and went out as A4 color (`cupsColorSpace 6`), 20 s from queue to done |
 | Time per job | about 13 to 18 s from submit to done for one A4 page, after the colord fix below |
-| Status dashboard | `http://impressora-pi.local:8025`: the repo's web dashboard as a systemd service (`cp1025-dashboard`), read-only, open to the home LAN, one reading every 10 s. It showed a page printed at 22:35 live ("+1 página(s) impressa(s), total 1328") |
+| Status dashboard | `http://impressora-pi.local:8025`: the repo's web dashboard as a systemd service (`cp1025-dashboard`), read-only, open to the home LAN, one reading every 10 s. It showed a page printed at 22:35 live ("+1 página(s) impressa(s), total 1328"). On 2026-10-24 22:53 it read `▲ ATENÇÃO` (only the non-HP cartridge alert, a warning since #15) |
 | Survives a reboot | yes (2026-10-22 22:28): back in 57 s with CUPS, Avahi, the queue and the fast job start; jobs start rendering 1 s after they are queued |
 | Updates | security updates install every day by themselves (Debian-Security only); reboot at 04:30 when a patch needs it |
-| Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0). The HDMI monitor step was added on 2026-10-23 and only that step was run on this Pi (exit 0, nothing changed); the whole script was not run again because the printer was off |
+| Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0). On 2026-10-24 the whole script, with the HDMI monitor step, ran on this Pi with the printer on (exit 0, 1 min 45 s, all three services active after). Since #16 a printer that is off no longer stops the script: it skips only the queue, starts the status page again, and fails at the end (simulated on 2026-10-24, see "Problems found") |
 | HDMI monitor (2026-10-23) | `dashboard.service` draws a carousel on the monitor (tty1, framebuffer) from [`pi-dashboard/`](../../pi-dashboard/README.md); settings page `http://impressora-pi.local:8026`, private addresses only, so the tailnet (100.64.0.0/10) is refused until decided. About 22% of one core on average, 52 to 60 C, no throttling (`throttled=0x0`), 100 to 194 MB of memory with `MALLOC_ARENA_MAX=2`. The news summaries read an OpenRouter key from `/etc/pi-dashboard/openrouter.env` (root, mode 600), a key only for the dashboard with a US$ 3 monthly limit. Installed by `setup.sh` |
 | Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
 | Docker | installed for a test on 2026-10-23 and removed the same night (the daemon alone took about 71 MB); the monitor runs as a systemd service |
-| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card, 11 package updates waiting on 2026-10-23 23:47 (security ones install by themselves; the 11 were not checked one by one) |
+| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card, 15 package updates waiting on 2026-10-24 22:53 (security ones install by themselves; the 15 were not checked one by one) |
 
 ## Decisions
 
@@ -162,7 +162,8 @@ cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py /DevMgmt/ProductStatusDyn.xml
 
 ## Not verified yet
 - Power-cycling the printer while the Pi runs (the queue and the dashboard should recover).
-- `setup.sh` on a blank card; it has only run on this Pi, which was already built by hand. The whole script with the HDMI monitor step has not run yet, only that step alone.
+- `setup.sh` on a blank card; it has only run on this Pi, which was already built by hand.
+- `setup.sh` with the printer really switched off: the new path (warn, finish, fail at the end) was simulated with a copy of the script whose USB search never matches.
 - Whether a job that starts during a dashboard reading waits or fails (`retry-job` would retry it).
 - How the color page from the phone (job 14) looks on paper: it printed, but nobody has reported the colors yet.
 - Whether the iPhone sees and prints to the Pi.
