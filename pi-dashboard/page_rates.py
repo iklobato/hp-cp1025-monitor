@@ -95,12 +95,12 @@ Points = tuple[tuple[date, float], ...]
 
 
 def percent(value: float, digits: int = 2) -> str:
-    return f"{value:.{digits}f}%".replace(".", ",")
+    return ui.decimal(value, digits) + "%"
 
 
 def signed(value: float, unit: str) -> str:
     sign = "+" if value > 0 else ""
-    return f"{sign}{value:.2f}".replace(".", ",") + f" {unit}".rstrip()
+    return sign + ui.decimal(value, 2) + f" {unit}".rstrip()
 
 
 def month_label(day: date) -> str:
@@ -230,7 +230,7 @@ def build_rows(
     dollar = series_row(
         "Dólar comercial",
         yahoo.get("BRL=X", []),
-        lambda v: "R$ " + f"{v:.4f}".replace(".", ","),
+        lambda v: "R$ " + ui.decimal(v, 4),
         "",
         relative=True,
     )
@@ -241,7 +241,7 @@ def build_rows(
             daily_row(
                 "Dólar PTAX",
                 series["ptax"],
-                lambda v: "R$ " + f"{v:.4f}".replace(".", ","),
+                lambda v: "R$ " + ui.decimal(v, 4),
                 "",
                 relative=True,
             )
@@ -304,13 +304,7 @@ def draw_rows(draw, box: tuple, title: str, rows: list[Row]) -> None:
     left, top, right, bottom = box
     ui.card(draw, box, title)
     if not rows:
-        draw.text(
-            (left + 16, top + 80),
-            "carregando…",
-            font=ui.font(20),
-            fill=ui.DIM,
-            anchor="ls",
-        )
+        ui.placeholder(draw, box)
         return
     height = (bottom - top - 46) / len(rows)
     value_right = left + 310
@@ -384,13 +378,7 @@ def draw_curve(draw, box: tuple, tesouro: Tesouro | None, error: str) -> None:
     left, top, right, bottom = box
     ui.card(draw, box, "Curva do Tesouro")
     if tesouro is None:
-        draw.text(
-            (left + 16, top + 80),
-            error or "carregando…",
-            font=ui.font(18),
-            fill=ui.DIM,
-            anchor="ls",
-        )
+        ui.placeholder(draw, box, error, size=18)
         return
     draw.text(
         (right - 16, top + 30),
@@ -471,13 +459,7 @@ def draw_credit(draw, box: tuple, credit: Credit | None, error: str) -> None:
         draw, box, "Juros do crédito" if narrow else "Juros do crédito (pessoa física)"
     )
     if credit is None:
-        draw.text(
-            (left + 16, top + 80),
-            error or "carregando…",
-            font=ui.font(18),
-            fill=ui.DIM,
-            anchor="ls",
-        )
+        ui.placeholder(draw, box, error, size=18)
         return
     draw.text(
         (right - 16, top + 30),
@@ -629,7 +611,7 @@ def build_metrics(series: dict[str, Points], sidra: dict, focus: dict) -> list[M
         metrics.append(
             Metric(
                 "Euro (PTAX)",
-                "R$ " + f"{value:.4f}".replace(".", ","),
+                "R$ " + ui.decimal(value, 4),
                 f"em {day:%d/%m}",
             )
         )
@@ -656,7 +638,7 @@ def build_metrics(series: dict[str, Points], sidra: dict, focus: dict) -> list[M
             )
     for indicator, label, text in (
         ("PIB Total", "Focus: PIB", lambda v: percent(v)),
-        ("Câmbio", "Focus: dólar", lambda v: "R$ " + f"{v:.2f}".replace(".", ",")),
+        ("Câmbio", "Focus: dólar", lambda v: "R$ " + ui.decimal(v, 2)),
     ):
         points = focus.get((indicator, this_year))
         if points:

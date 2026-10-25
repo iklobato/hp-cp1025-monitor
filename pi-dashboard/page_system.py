@@ -131,15 +131,11 @@ def speed(bytes_per_second: float) -> str:
         return f"{bytes_per_second:.0f} B/s"
     if bytes_per_second < 1024 * 1024:
         return f"{bytes_per_second / 1024:.0f} KB/s"
-    return f"{bytes_per_second / 1024 / 1024:.1f} MB/s".replace(".", ",")
+    return ui.decimal(bytes_per_second / 1024 / 1024, 1) + " MB/s"
 
 
 def megabytes(kilobytes: int) -> str:
     return f"{kilobytes / 1024:.0f} MB"
-
-
-def decimal(value: float, places: int = 2) -> str:
-    return f"{value:.{places}f}".replace(".", ",")
 
 
 def draw_bar(draw, box: tuple, fraction: float, color: tuple) -> None:
@@ -359,7 +355,7 @@ def draw_toner(
         f"coloridas ({share:.0%})"
     )
     if forecast is not None and forecast.pages_per_day:
-        totals += f" · ~{decimal(forecast.pages_per_day, 1)} pág./dia"
+        totals += f" · ~{ui.decimal(forecast.pages_per_day, 1)} pág./dia"
     draw.text(
         (left + 16, bottom - 44),
         ui.fit(totals, ui.font(16), right - left - 32),
@@ -604,13 +600,7 @@ def draw_processor(
     left, top, right, bottom = box
     ui.card(draw, box, "Processador")
     if stats is None or gauges is None:
-        draw.text(
-            (left + 16, top + 90),
-            "carregando…",
-            font=ui.font(20),
-            fill=ui.DIM,
-            anchor="ls",
-        )
+        ui.placeholder(draw, box, below=90)
         return
     draw.text(
         (right - 16, top + 30),
@@ -652,7 +642,7 @@ def draw_processor(
     if health.volts is not None:
         draw.text(
             (left + 16, top + 216),
-            f"núcleo a {decimal(health.volts)} V",
+            f"núcleo a {ui.decimal(health.volts, 2)} V",
             font=ui.font(14),
             fill=ui.DIM,
             anchor="ls",
@@ -683,7 +673,7 @@ def draw_processor(
             )
     one, five, fifteen = gauges.load
     lines = [
-        f"carga {decimal(one)} · {decimal(five)} · {decimal(fifteen)}  (1, 5, 15 min)"
+        f"carga {ui.decimal(one, 2)} · {ui.decimal(five, 2)} · {ui.decimal(fifteen, 2)}  (1, 5, 15 min)"
     ]
     if live is not None:
         lines.append(

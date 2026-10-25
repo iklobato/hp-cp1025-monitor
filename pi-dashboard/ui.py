@@ -4,9 +4,8 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
-import sources
 from PIL import Image, ImageDraw, ImageFont
-from sources import Feed, Story
+from sources import Feed
 
 BACKGROUND = (13, 17, 23)
 CARD = (22, 27, 34)
@@ -42,8 +41,8 @@ MONTHS = (
     "dezembro",
 )
 
-NEWS_LINE = 23
 GUTTER = 12
+LOADING = "carregando…"
 STRIPE = (30, 36, 45)  # between CARD and GRID
 
 
@@ -126,6 +125,28 @@ def arrow(change: float) -> str:
     if change > 0:
         return "▲"
     return "▼" if change < 0 else "■"
+
+
+def decimal(value: float, places: int) -> str:
+    """Brazilian decimal comma: 6,30 / 0,1 (no thousands separator; see sources.br_number)."""
+    return f"{value:.{places}f}".replace(".", ",")
+
+
+def placeholder(
+    draw: ImageDraw.ImageDraw,
+    box: tuple,
+    text: str = "",
+    size: int = 20,
+    below: int = 80,
+) -> None:
+    """A card's body while its data is missing: the fetch error, or "carregando…" before the first."""
+    draw.text(
+        (box[0] + 16, box[1] + below),
+        text or LOADING,
+        font=font(size),
+        fill=DIM,
+        anchor="ls",
+    )
 
 
 def fit(text: str, face: ImageFont.FreeTypeFont, max_width: float) -> str:
@@ -219,85 +240,6 @@ def feed_colors(feeds: tuple[Feed, ...]) -> dict[str, tuple]:
         feed.letter: BADGE_COLORS[index % len(BADGE_COLORS)]
         for index, feed in enumerate(feeds)
     }
-
-
-def news_list(
-    draw,
-    box: tuple,
-    title: str,
-    feeds: tuple[Feed, ...],
-    stories: list[Story],
-    now: datetime,
-    watch: tuple[str, ...] = (),
-) -> None:
-    """One line per story, newest first; a title wider than the panel is cut, never wrapped.
-
-    A story that mentions a watched word gets an amber band and an amber title.
-    """
-    left, top, right, bottom = box
-    card(draw, box, title)
-    colors = feed_colors(feeds)
-    legend_x = right - 14
-    for feed in reversed(feeds):
-        legend_x -= font(14).getlength(feed.label)
-        draw.text(
-            (legend_x, top + 28), feed.label, font=font(14), fill=DIM, anchor="ls"
-        )
-        legend_x -= 18
-        draw.ellipse(
-            [legend_x, top + 16, legend_x + 14, top + 30], fill=colors[feed.letter]
-        )
-        legend_x -= 14
-    # Condensed text and tight columns: with 16px condensed, 59 of 60 measured titles fit.
-    meta_font, title_font = font(15, condensed=True), font(16, condensed=True)
-    watched_font = font(16, bold=True, condensed=True)
-    age_right = left + 14 + 18 + 6 + meta_font.getlength("59m")
-    time_right = age_right + 10 + meta_font.getlength("00/00 00:00")
-    title_left = time_right + 10
-    rows = int((bottom - top - 44) // NEWS_LINE)
-    for row, story in enumerate(
-        sorted(stories, key=lambda s: s.published, reverse=True)[:rows]
-    ):
-        baseline = top + 44 + (row + 1) * NEWS_LINE - 6
-        watched = story.mentions(watch)
-        if watched:
-            draw.rounded_rectangle(
-                (left + 8, baseline - 17, right - 8, baseline + 5),
-                radius=6,
-                fill=blend(AMBER, CARD, 0.18),
-            )
-        badge(
-            draw,
-            left + 14,
-            baseline - 5,
-            story.feed.letter,
-            colors.get(story.feed.letter, DIM),
-        )
-        draw.text(
-            (age_right, baseline),
-            sources.short_age(now - story.published),
-            font=meta_font,
-            fill=DIM,
-            anchor="rs",
-        )
-        draw.text(
-            (time_right, baseline),
-            sources.clock(story.published, now),
-            font=meta_font,
-            fill=DIM,
-            anchor="rs",
-        )
-        draw.text(
-            (title_left, baseline),
-            fit(
-                story.title,
-                watched_font if watched else title_font,
-                right - 14 - title_left,
-            ),
-            font=watched_font if watched else title_font,
-            fill=AMBER if watched else TEXT,
-            anchor="ls",
-        )
 
 
 def selftest() -> None:
