@@ -65,7 +65,8 @@ docker run -d --name dashboard --user 0:0 --cap-add SYS_TTY_CONFIG \
 | `admin.py`, `admin.html` | the settings page |
 | `ui.py` | the page base class, colors, fonts, charts |
 | `summary.py` | the news summaries: asks OpenRouter once per story, keeps the text for 3 days, stops at US$ 3 a month |
-| `sources.py` | every data source (Yahoo chart API, RSS, Banco Central, IBGE, Tesouro, Open-Meteo, INMET, RainViewer, Esri tiles, ANP, Caixa, local commands) |
+| `net.py` | what every data source shares: the HTTP fetch with retries, the download cache, the text helpers |
+| `*_data.py` | one module per data source: `news_data` (RSS), `market_data` (Yahoo chart API), `rates_data` (Banco Central, IBGE, Tesouro), `weather_data` (Open-Meteo, INMET, RainViewer, Esri tiles), `city_data` (IBGE, Open-Meteo), `fuel_data` (ANP), `lottery_data` (Caixa), `system_data` (local commands) |
 | `procfs.py` | the Pi's numbers read from `/proc` and `/sys` |
 | `page_*.py` | one module per block |
 

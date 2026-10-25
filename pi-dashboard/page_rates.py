@@ -14,10 +14,14 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from math import prod
 
-import sources
+import market_data
+import net
+import rates_data
 import ui
+from market_data import RATE_PERIODS, Series
+from net import SourceError
 from PIL import Image, ImageDraw
-from sources import RATE_PERIODS, Credit, Series, SourceError, Tesouro
+from rates_data import Credit, Tesouro
 
 REFRESH_EVERY = timedelta(hours=6)
 SLOW_REFRESH = timedelta(hours=12)  # Tesouro file and credit survey
@@ -192,7 +196,7 @@ def series_row(
         )
         for period, s in zip(RATE_PERIODS, series)
     )
-    stamp = sources.clock(series[0].traded_at, datetime.now(timezone.utc))
+    stamp = net.clock(series[0].traded_at, datetime.now(timezone.utc))
     return Row(
         label,
         value_text(series[0].price),
@@ -700,12 +704,12 @@ class RatesPage(ui.Page):
 
     def __init__(
         self,
-        fetch_sgs=sources.fetch_sgs,
-        fetch_sidra=sources.fetch_sidra,
-        fetch_tesouro=sources.fetch_tesouro,
-        fetch_focus=sources.fetch_focus,
-        fetch_credit=sources.fetch_credit,
-        fetch_series=sources.fetch_series,
+        fetch_sgs=rates_data.fetch_sgs,
+        fetch_sidra=rates_data.fetch_sidra,
+        fetch_tesouro=rates_data.fetch_tesouro,
+        fetch_focus=rates_data.fetch_focus,
+        fetch_credit=rates_data.fetch_credit,
+        fetch_series=market_data.fetch_series,
     ) -> None:
         self.fetch_sgs, self.fetch_sidra, self.fetch_tesouro = (
             fetch_sgs,

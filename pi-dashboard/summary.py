@@ -15,7 +15,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
-from sources import CACHE_DIR, Feed, SourceError, Story, plain_text
+from net import CACHE_DIR, SourceError
+from news_data import Feed, Story, plain_text
 
 API_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Compared on 10 real stories on 2026-10-23: both kept the facts and the size, in Portuguese;

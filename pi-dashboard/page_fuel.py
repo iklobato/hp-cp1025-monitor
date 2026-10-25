@@ -6,10 +6,12 @@ from datetime import date, datetime, timedelta, timezone
 from statistics import mean
 
 import fields
-import sources
+import fuel_data
+import news_data
 import ui
+from fuel_data import FuelWeek, StationPrice
+from net import SourceError
 from PIL import Image, ImageDraw
-from sources import FuelWeek, SourceError, StationPrice
 
 CITY = "São Paulo"
 NEIGHBOURS = ("Campinas", "Guarulhos")
@@ -49,11 +51,11 @@ class Summary:
 def summarize(
     prices: tuple[StationPrice, ...], city: str, product: str
 ) -> Summary | None:
-    key = sources.title_key(city)  # ANP writes JUNDIAI for Jundiaí
+    key = news_data.title_key(city)  # ANP writes JUNDIAI for Jundiaí
     values = [
         p.price
         for p in prices
-        if sources.title_key(p.city) == key and p.product == product
+        if news_data.title_key(p.city) == key and p.product == product
     ]
     if not values:
         return None
@@ -73,12 +75,12 @@ def ethanol_ratio(prices: tuple[StationPrice, ...], city: str) -> float | None:
 def cheapest(
     prices: tuple[StationPrice, ...], city: str, product: str
 ) -> list[StationPrice]:
-    key = sources.title_key(city)
+    key = news_data.title_key(city)
     return sorted(
         (
             p
             for p in prices
-            if sources.title_key(p.city) == key and p.product == product
+            if news_data.title_key(p.city) == key and p.product == product
         ),
         key=lambda p: (p.price, p.station),
     )
@@ -341,7 +343,7 @@ class FuelPage(ui.Page):
         ),
     )
 
-    def __init__(self, fetch_weeks=sources.fetch_fuel_weeks) -> None:
+    def __init__(self, fetch_weeks=fuel_data.fetch_fuel_weeks) -> None:
         self.fetch_weeks = fetch_weeks
         self.city, self.neighbours, self.stations_shown = (
             CITY,

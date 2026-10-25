@@ -5,10 +5,11 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 import fields
-import sources
+import lottery_data
 import ui
+from lottery_data import Draw
+from net import SourceError
 from PIL import Image, ImageDraw
-from sources import Draw, SourceError
 
 # (API name, label, color of the game's own branding)
 GAMES = (
@@ -387,7 +388,7 @@ class LotteryPage(ui.Page):
         ),
     )
 
-    def __init__(self, fetch_draw=sources.fetch_draw) -> None:
+    def __init__(self, fetch_draw=lottery_data.fetch_draw) -> None:
         self.fetch_draw = fetch_draw
         self.games = GAMES
         self.draws: dict[str, Draw] = {}

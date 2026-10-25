@@ -16,21 +16,23 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import net
 import procfs
-import sources
+import system_data
 import ui
+from net import SourceError
 from PIL import Image, ImageDraw
-from sources import Job, Network, PiStats, PrinterReading, PrinterStatus, SourceError
+from system_data import Job, Network, PiStats, PrinterReading, PrinterStatus
 
 MONITOR_DIR = Path.home() / "hp-cp1025-monitor"
 HISTORY = MONITOR_DIR / "history.jsonl"
 STATUS_URL = os.environ.get(
     "PI_DASHBOARD_PRINTER_URL", "http://127.0.0.1:8025/api/status"
 )
-STATUS_SAVED = sources.CACHE_DIR / "printer-status.json"
+STATUS_SAVED = net.CACHE_DIR / "printer-status.json"
 # Each block runs its commands on its own thread, so each needs its own output file.
-PRINTER_SCRATCH = sources.CACHE_DIR / "command-printer.txt"
-PI_SCRATCH = sources.CACHE_DIR / "command-pi.txt"
+PRINTER_SCRATCH = net.CACHE_DIR / "command-printer.txt"
+PI_SCRATCH = net.CACHE_DIR / "command-pi.txt"
 SERVICES = (
     ("cups", "CUPS"),
     ("cp1025-dashboard", "monitor"),
@@ -183,9 +185,7 @@ def toner_end(forecast, key: str, supply: dict, now: datetime) -> str:
 
 def reading_time(payload: dict, now: datetime) -> str:
     try:
-        return sources.clock(
-            datetime.fromisoformat(payload["read_at"]).astimezone(), now
-        )
+        return net.clock(datetime.fromisoformat(payload["read_at"]).astimezone(), now)
     except (KeyError, TypeError, ValueError):
         return "?"
 
@@ -301,7 +301,7 @@ def draw_toner(
     state = STATUS_NAMES.get(reading.status, reading.status)
     draw.text(
         (right - 16, top + 30),
-        f"lido {sources.clock(reading.read_at, now)} · {state}",
+        f"lido {net.clock(reading.read_at, now)} · {state}",
         font=ui.font(15),
         fill=ui.DIM,
         anchor="rs",
@@ -560,7 +560,7 @@ def draw_jobs(
             break
         draw.text(
             (left + 16, y),
-            f"{sources.clock(job.finished, now)}",
+            f"{net.clock(job.finished, now)}",
             font=ui.font(16),
             fill=ui.DIM,
             anchor="ls",
@@ -863,7 +863,7 @@ def draw_processes(draw, box: tuple, live: procfs.Rates | None) -> None:
 def power_row(throttle: int | None) -> tuple[str, str, tuple]:
     if throttle is None:
         return "Energia e calor", "sem leitura", ui.DIM
-    now_notes, past_notes = sources.throttle_notes(throttle)
+    now_notes, past_notes = system_data.throttle_notes(throttle)
     if now_notes:
         return "Energia e calor", ", ".join(now_notes), ui.RED
     if past_notes:
@@ -969,7 +969,7 @@ def system_rows(
         ("Sistema", system.distro, ui.TEXT),
         (
             "Ligada desde",
-            f"{sources.clock(system.booted, now)} (há {duration(now - system.booted)})",
+            f"{net.clock(system.booted, now)} (há {duration(now - system.booted)})",
             ui.TEXT,
         ),
     ]
@@ -988,7 +988,7 @@ class PrinterPanel(ui.Page):
     name = "Impressora"
     live = True
 
-    def __init__(self, history=load_monitor_history, fetch=sources.fetch_bytes) -> None:
+    def __init__(self, history=load_monitor_history, fetch=net.fetch_bytes) -> None:
         self.monitor_history = history()
         self.fetch = fetch
         self.status = PrinterStatus({}, "", False)
@@ -1023,20 +1023,22 @@ class PrinterPanel(ui.Page):
 
     def _read_status(self, now: datetime) -> None:
         save = self.saved_at is None or now - self.saved_at >= SAVE_EVERY
-        self.status = sources.printer_status(STATUS_URL, STATUS_SAVED, save, self.fetch)
+        self.status = system_data.printer_status(
+            STATUS_URL, STATUS_SAVED, save, self.fetch
+        )
         if save and self.status.payload and not self.status.from_disk:
             self.saved_at = now
 
     def _read_history(self) -> None:
-        self.reading = sources.last_printer_reading(HISTORY)
+        self.reading = system_data.last_printer_reading(HISTORY)
         if self.monitor_history is not None and HISTORY.exists():
             entries = self.monitor_history.load(HISTORY)
-            self.printed = sources.daily_pages(entries)
+            self.printed = system_data.daily_pages(entries)
             self.forecast = self.monitor_history.forecast(entries)
 
     def _read_queue(self) -> None:
-        self.queue = sources.print_queue(PRINTER_SCRATCH)
-        self.jobs = sources.completed_jobs(PRINTER_SCRATCH)
+        self.queue = system_data.print_queue(PRINTER_SCRATCH)
+        self.jobs = system_data.completed_jobs(PRINTER_SCRATCH)
 
     def problems(self) -> list[str]:
         return self.status_errors + self.slow_errors
@@ -1120,7 +1122,7 @@ class PiPanel(ui.Page):
             self.downloads = (*self.downloads, live.down_bytes)[-RATE_SAMPLES:]
         self.counters = counters
         self.gauges = procfs.gauges()
-        self.stats = sources.pi_stats()
+        self.stats = system_data.pi_stats()
         if self.chart_at is None or now - self.chart_at >= CHART_STEP:
             self.temperatures = (*self.temperatures, self.stats.temperature)[
                 -SAMPLES_KEPT:
@@ -1150,31 +1152,35 @@ class PiPanel(ui.Page):
             or now - self.updates_read_at >= UPDATES_REFRESH
         ):
             updates = attempt(
-                "Atualizações", lambda: sources.pending_updates(PI_SCRATCH), old.updates
+                "Atualizações",
+                lambda: system_data.pending_updates(PI_SCRATCH),
+                old.updates,
             )
             self.updates_read_at = now
         self.health = Health(
-            attempt("Energia", lambda: sources.throttle_bits(PI_SCRATCH), old.throttle),
+            attempt(
+                "Energia", lambda: system_data.throttle_bits(PI_SCRATCH), old.throttle
+            ),
             attempt(
                 "Serviços",
-                lambda: sources.services_state(
+                lambda: system_data.services_state(
                     tuple(n for n, _ in SERVICES), PI_SCRATCH
                 ),
                 old.services,
             ),
-            sources.network(PI_SCRATCH),
+            system_data.network(PI_SCRATCH),
             updates,
             attempt(
                 "Journal",
-                lambda: sources.journal_errors(PI_SCRATCH),
+                lambda: system_data.journal_errors(PI_SCRATCH),
                 old.journal_errors,
             ),
             attempt(
                 "Serviços com falha",
-                lambda: sources.failed_units(PI_SCRATCH),
+                lambda: system_data.failed_units(PI_SCRATCH),
                 old.failed,
             ),
-            attempt("Tensão", lambda: sources.core_volts(PI_SCRATCH), old.volts),
+            attempt("Tensão", lambda: system_data.core_volts(PI_SCRATCH), old.volts),
             procfs.system(now),
         )
         self.errors = errors

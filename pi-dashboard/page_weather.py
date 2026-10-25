@@ -14,10 +14,12 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import fields
-import sources
+import net
 import ui
+import weather_data
+from net import SourceError
 from PIL import Image, ImageDraw
-from sources import Air, Alert, Day, Hour, RadarFrame, SourceError, Weather
+from weather_data import Air, Alert, Day, Hour, RadarFrame, Weather
 
 
 @dataclass(frozen=True)
@@ -50,7 +52,7 @@ RADAR_ZOOM = 7
 SIDE_COLUMN = 776  # alerts, air quality and the two cities, right of the map
 COMPACT_MAP_SHARE = 0.5  # in the narrow column the map takes the top half
 TILE = 256
-TILE_DIR = sources.CACHE_DIR / "tiles"
+TILE_DIR = net.CACHE_DIR / "tiles"
 
 SUN = (250, 204, 21)
 CLOUD = (176, 186, 197)
@@ -612,7 +614,7 @@ class WeatherPage(ui.Page):
         fields.CityFields("cidade_2", "latitude_2", "longitude_2"),
     )
 
-    def __init__(self, fetch_weather=sources.fetch_weather) -> None:
+    def __init__(self, fetch_weather=weather_data.fetch_weather) -> None:
         self.fetch_weather = fetch_weather
         self.places = DEFAULT_PLACES
         self.weather: Weather | None = None
@@ -797,11 +799,11 @@ def compose_map(
     center: tuple[float, float],
     size: tuple[int, int],
     frame: RadarFrame | None,
-    fetch=sources.fetch_bytes,
+    fetch=net.fetch_bytes,
     tile_dir: Path = TILE_DIR,
 ) -> Image.Image:
     """Dark basemap and city names (both cached on disk) around the newest radar frame, centered on `center`."""
-    x, y = sources.tile_xy(center[0], center[1], RADAR_ZOOM)
+    x, y = weather_data.tile_xy(center[0], center[1], RADAR_ZOOM)
     width, height = size
     origin_x, origin_y = x * TILE - width / 2, y * TILE - height / 2
     first_x, first_y = int(origin_x // TILE), int(origin_y // TILE)
@@ -813,7 +815,7 @@ def compose_map(
     )
 
     def tile(url: str, name: str) -> Image.Image:
-        body = sources.cached_tile(
+        body = weather_data.cached_tile(
             url.format(z=RADAR_ZOOM, x=tile_x, y=tile_y),
             tile_dir / f"{name}-{RADAR_ZOOM}-{tile_x}-{tile_y}",
             fetch,
@@ -823,10 +825,10 @@ def compose_map(
     for tile_x in range(first_x, last_x + 1):
         for tile_y in range(first_y, last_y + 1):
             spot = ((tile_x - first_x) * TILE, (tile_y - first_y) * TILE)
-            canvas.paste(tile(sources.BASEMAP_TILE_URL, "esri-base"), spot)
+            canvas.paste(tile(weather_data.BASEMAP_TILE_URL, "esri-base"), spot)
             if frame is not None:
                 radar = fetch(
-                    sources.RADAR_TILE_URL.format(
+                    weather_data.RADAR_TILE_URL.format(
                         host=frame.host,
                         path=frame.path,
                         z=RADAR_ZOOM,
@@ -837,7 +839,9 @@ def compose_map(
                 layer = Image.open(io.BytesIO(radar)).convert("RGBA")
                 layer.putalpha(layer.getchannel("A").point(lambda a: a * 85 // 100))
                 canvas.alpha_composite(layer, spot)
-            canvas.alpha_composite(tile(sources.LABELS_TILE_URL, "esri-labels"), spot)
+            canvas.alpha_composite(
+                tile(weather_data.LABELS_TILE_URL, "esri-labels"), spot
+            )
     left, top = int(origin_x - first_x * TILE), int(origin_y - first_y * TILE)
     return canvas.crop((left, top, left + width, top + height)).convert("RGB")
 
@@ -848,8 +852,8 @@ def map_point(
     center: tuple[float, float],
     size: tuple[int, int],
 ):
-    cx, cy = sources.tile_xy(center[0], center[1], RADAR_ZOOM)
-    px, py = sources.tile_xy(latitude, longitude, RADAR_ZOOM)
+    cx, cy = weather_data.tile_xy(center[0], center[1], RADAR_ZOOM)
+    px, py = weather_data.tile_xy(latitude, longitude, RADAR_ZOOM)
     return size[0] / 2 + (px - cx) * TILE, size[1] / 2 + (py - cy) * TILE
 
 
@@ -1065,11 +1069,11 @@ class WeatherDetailsPage(ui.Page):
     def __init__(
         self,
         main: WeatherPage,
-        fetch_weather=sources.fetch_weather,
-        fetch_air=sources.fetch_air,
-        fetch_alerts=sources.fetch_alerts,
-        fetch_radar_frame=sources.fetch_radar_frame,
-        fetch=sources.fetch_bytes,
+        fetch_weather=weather_data.fetch_weather,
+        fetch_air=weather_data.fetch_air,
+        fetch_alerts=weather_data.fetch_alerts,
+        fetch_radar_frame=weather_data.fetch_radar_frame,
+        fetch=net.fetch_bytes,
         tile_dir: Path = TILE_DIR,
     ) -> None:
         self.main = (
@@ -1285,7 +1289,7 @@ class WeatherDetailsPage(ui.Page):
             radius=8,
             fill=ui.CARD,
         )
-        stamp = sources.clock(self.radar.time, now) if self.radar else "-"
+        stamp = net.clock(self.radar.time, now) if self.radar else "-"
         draw.text(
             (origin[0] + 24, origin[1] + 38),
             f"Radar de chuva · {stamp}",
