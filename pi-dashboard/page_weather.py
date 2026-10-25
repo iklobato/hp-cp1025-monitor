@@ -130,10 +130,6 @@ def degrees(value: float) -> str:
     return f"{value:.0f}°"
 
 
-def decimal(value: float, digits: int = 1) -> str:
-    return f"{value:.{digits}f}".replace(".", ",")
-
-
 def compass(direction: float) -> str:
     return COMPASS[round(direction / 45) % 8]
 
@@ -281,16 +277,6 @@ def upcoming_hours(hours: tuple[Hour, ...], now: datetime) -> list[Hour]:
     return [hour for hour in hours if hour.time >= current][:HOURS_AHEAD]
 
 
-def missing(draw, box: tuple, text: str) -> None:
-    draw.text(
-        (box[0] + 16, box[1] + 80),
-        text or "carregando…",
-        font=ui.font(20),
-        fill=ui.DIM,
-        anchor="ls",
-    )
-
-
 def draw_now(draw, box: tuple, weather: Weather, today: Day | None, city: str) -> None:
     left, top, right, bottom = box
     ui.card(draw, box, f"Agora em {city}")
@@ -325,9 +311,9 @@ def draw_now(draw, box: tuple, weather: Weather, today: Day | None, city: str) -
         ("Rajadas", f"{weather.gusts:.0f} km/h"),
         ("Pressão", f"{weather.pressure:.0f} hPa, {trend}"),
         ("Nuvens", f"{weather.clouds:.0f}%"),
-        ("Visibilidade", f"{decimal(weather.visibility_km)} km"),
+        ("Visibilidade", f"{ui.decimal(weather.visibility_km, 1)} km"),
         ("Orvalho", degrees(weather.dew_point)),
-        ("Chuva agora", f"{decimal(weather.rain_now)} mm"),
+        ("Chuva agora", f"{ui.decimal(weather.rain_now, 1)} mm"),
         ("UV hoje", f"{today.uv:.0f}" if today else "-"),
     ]
     narrow = (
@@ -462,7 +448,7 @@ def draw_day(draw, box: tuple, day: Day, today: date) -> None:
     )
     draw.text(
         (center, top + 284),
-        f"{decimal(day.rain_mm)} mm",
+        f"{ui.decimal(day.rain_mm, 1)} mm",
         font=ui.font(13),
         fill=RAIN,
         anchor="ms",
@@ -476,7 +462,7 @@ def draw_past_rain(draw, box: tuple, past: tuple[Day, ...]) -> None:
     ui.card(draw, box, "Chuva nos últimos 7 dias")
     draw.text(
         (right - 16, top + 30),
-        f"total {decimal(total)} mm",
+        f"total {ui.decimal(total, 1)} mm",
         font=ui.font(16, bold=True),
         fill=RAIN,
         anchor="rs",
@@ -493,7 +479,7 @@ def draw_past_rain(draw, box: tuple, past: tuple[Day, ...]) -> None:
         draw.rectangle([x0, chart_bottom - height, x1, chart_bottom], fill=RAIN)
         draw.text(
             ((x0 + x1) / 2, chart_bottom - height - 4),
-            f"{decimal(day.rain_mm)}",
+            f"{ui.decimal(day.rain_mm, 1)}",
             font=ui.font(13),
             fill=ui.TEXT,
             anchor="ms",
@@ -668,7 +654,7 @@ class WeatherPage(ui.Page):
         weather = self.weather
         if weather is None:
             ui.card(draw, box, f"Clima em {self.places.home.name}")
-            missing(draw, box, self.error)
+            ui.placeholder(draw, box, self.error)
             return
         local_now = now.astimezone(weather.read_at.tzinfo)
         today = next((day for day in weather.days if day.day == local_now.date()), None)
@@ -701,7 +687,7 @@ class WeatherPage(ui.Page):
             rows.append(
                 (
                     "Chuva hoje",
-                    f"{today.rain_chance:.0f}% · {decimal(today.rain_mm)} mm",
+                    f"{today.rain_chance:.0f}% · {ui.decimal(today.rain_mm, 1)} mm",
                 )
             )
         for index, (label, value) in enumerate(rows):
@@ -761,7 +747,7 @@ class WeatherPage(ui.Page):
         weather = self.weather
         if weather is None:
             ui.card(draw, box, f"Clima em {self.places.home.name}")
-            missing(draw, box, self.error)
+            ui.placeholder(draw, box, self.error)
             return
         local_now = now.astimezone(weather.read_at.tzinfo)
         today = next((day for day in weather.days if day.day == local_now.date()), None)
@@ -879,7 +865,7 @@ def draw_alerts(
     left, top, right, bottom = box
     ui.card(draw, box, f"Alertas do INMET para {city}")
     if error and not alerts:
-        missing(draw, box, error)
+        ui.placeholder(draw, box, error)
         return
     if not alerts:
         draw.text(
@@ -936,7 +922,7 @@ def draw_air(
     left, top, right, bottom = box
     ui.card(draw, box, f"Qualidade do ar em {city}")
     if air is None:
-        missing(draw, box, error)
+        ui.placeholder(draw, box, error)
         return
     name, color = air_band(air.aqi)
     details = (("PM2,5", air.pm25), ("PM10", air.pm10), ("Ozônio", air.ozone))
@@ -1190,7 +1176,7 @@ class WeatherDetailsPage(ui.Page):
     def _draw_map(self, draw, box: tuple, now: datetime) -> None:
         if self.map_image is None:
             ui.card(draw, box, "Radar de chuva")
-            missing(draw, box, self.errors.get("radar", ""))
+            ui.placeholder(draw, box, self.errors.get("radar", ""))
         else:
             self._draw_map_labels(draw, (box[0], box[1]), now)
 

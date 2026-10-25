@@ -34,12 +34,12 @@ def money(value: float) -> str:
         text = (
             f"{millions:.0f}"
             if millions >= 10 or millions == int(millions)
-            else f"{millions:.1f}".replace(".", ",")
+            else ui.decimal(millions, 1)
         )
         return f"R$ {text} {'milhão' if text == '1' else 'milhões'}"
     if value >= 1_000:
         return f"R$ {value / 1_000:.0f} mil"
-    return "R$ " + f"{value:.2f}".replace(".", ",")
+    return "R$ " + ui.decimal(value, 2)
 
 
 def draw_balls(draw, box: tuple, numbers: tuple[str, ...], color: tuple) -> float:

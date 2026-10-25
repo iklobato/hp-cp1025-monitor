@@ -35,7 +35,7 @@ TWO_ROW_CARD_HEIGHT = 272
 
 
 def reais(value: float, digits: int = 2) -> str:
-    return "R$ " + f"{value:.{digits}f}".replace(".", ",")
+    return "R$ " + ui.decimal(value, digits)
 
 
 @dataclass(frozen=True)
@@ -391,13 +391,7 @@ class FuelPage(ui.Page):
         left, top, right, bottom = box
         if not self.weeks:
             ui.card(draw, box, f"Combustível em {self.city}")
-            draw.text(
-                (left + 16, top + 80),
-                self.error or "carregando…",
-                font=ui.font(20),
-                fill=ui.DIM,
-                anchor="ls",
-            )
+            ui.placeholder(draw, box, self.error)
             return
         current = self.weeks[0].prices
         previous = self.weeks[1].prices if len(self.weeks) > 1 else ()

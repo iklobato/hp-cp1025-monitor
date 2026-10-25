@@ -393,13 +393,7 @@ def draw_block(
     colors = ui.feed_colors(news.feeds.get(topic, ()))
     shown = newest(stories)
     if not shown:
-        draw.text(
-            (left + 16, top + 80),
-            "carregando…",
-            font=ui.font(18),
-            fill=ui.DIM,
-            anchor="ls",
-        )
+        ui.placeholder(draw, box, size=18)
         return
     row = (bottom - top - 46) / STORIES_SHOWN
     for index, story in enumerate(shown):
