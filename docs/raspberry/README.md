@@ -8,23 +8,26 @@ Mac / iPhone / Android / Linux  --AirPrint/IPP-->  Raspberry Pi 3 (CUPS + foo2zj
 
 The Pi also runs this repo's status page (port 8025); `setup.sh` installs both. The HDMI monitor on the same Pi is a separate project since 2026-10-25: [pi-painel](https://github.com/iklobato/pi-painel).
 
-## Status (last checked 2026-10-24 22:53)
+## Status (last checked 2026-10-26 01:03)
 
 | Area | State |
 |---|---|
-| Pi | Raspberry Pi 3 Model B Rev 1.2, wired, `impressora-pi.local` (`192.168.1.177` from DHCP, not reserved yet) |
+| Pi | Raspberry Pi 3 Model B Rev 1.2, wired, `impressora-pi.local` (address from DHCP, not reserved in the router yet). 905 MB memory, 488 MB available, 55.8 C, `throttled=0x0` |
 | OS | Raspberry Pi OS Lite 64-bit **Trixie** (Debian 13), image 2026-10-06, kernel 6.18.50 |
 | Login | `ssh impressora` from the Mac (key `~/.ssh/impressora`, user `iklo`); SSH password login is off; `sudo` without password |
-| Printing | **works over the network.** Queue `HP_CP1025` on the Pi's USB, shared, shown as "HP CP1025 @ impressora-pi" in AirPrint. 11 pages printed by 22:35 (jobs 1 to 7, 14 and 16, from the Pi itself, an Android phone and a second network client; jobs 8 to 13 and 15 went to a test queue, not to paper); printer page counter went 1,317 to 1,328. The last phone job (14, 21:36) asked for color and went out as A4 color (`cupsColorSpace 6`), 20 s from queue to done |
+| Printing from phones and the Pi | **works.** Queue `HP_CP1025` on the Pi's USB, shared, shown as "HP CP1025 @ impressora-pi" in AirPrint. 11 pages printed by 2026-10-22 22:35 (jobs 1 to 7, 14 and 16, from the Pi itself, an Android phone and a second network client; jobs 8 to 13 and 15 went to a test queue); page counter 1,317 to 1,328. Phone job 14 (21:36) asked for color and went out as A4 color (`cupsColorSpace 6`), 20 s from queue to done |
+| Printing from the Mac | **broken.** The Mac's queue `HP_CP1025___impressora_pi` (added 2026-10-22 22:56) uses "Generic PostScript Printer". Its job 17 (2026-10-26 00:56:55, 4.9 MB, `application/vnd.cups-postscript`) printed nothing: `gstoraster` logged `No pages left, outputting empty file.`, then `rastertopksm: no pages in raster` and `Job stopped due to filter errors`. See "Problems found" |
 | Time per job | about 13 to 18 s from submit to done for one A4 page, after the colord fix below |
-| Status dashboard | `http://impressora-pi.local:8025`: the repo's web dashboard as a systemd service (`cp1025-dashboard`), read-only, open to the home LAN, one reading every 10 s. It showed a page printed at 22:35 live ("+1 página(s) impressa(s), total 1328"). On 2026-10-24 22:53 it read `▲ ATENÇÃO` (only the non-HP cartridge alert, a warning since #15) |
-| Survives a reboot | yes (2026-10-22 22:28): back in 57 s with CUPS, Avahi, the queue and the fast job start; jobs start rendering 1 s after they are queued |
-| Updates | security updates install every day by themselves (Debian-Security only); reboot at 04:30 when a patch needs it |
-| Rebuild | [`setup.sh`](setup.sh) rebuilds everything above on a fresh card; ran 8 times on this Pi from a local copy, then once more as published (downloaded from GitHub `main` with `curl`, exit 0). On 2026-10-24 the whole script, with the HDMI monitor step, ran on this Pi with the printer on (exit 0, 1 min 45 s, all three services active after). Since #16 a printer that is off no longer stops the script: it skips only the queue, starts the status page again, and fails at the end (simulated on 2026-10-24, see "Problems found") |
-| HDMI monitor (2026-10-23 to 2026-10-25) | `dashboard.service` from `pi-dashboard/` drew a carousel on the monitor; replaced on 2026-10-25 by [pi-painel](https://github.com/iklobato/pi-painel), which is installed by its own `deploy/install.sh`. The old service, `~/dashboard`, its cache and `/etc/pi-dashboard` were removed from the Pi that day |
-| Status pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
-| Docker | installed for a test on 2026-10-23 and removed the same night (the daemon alone took about 71 MB); the monitor runs as a systemd service |
-| Not done | trimming, Tailscale, access rules, admin over HTTPS, reserving the IP in the router, power-cycling the printer, moving the Mac to the network printer, a rebuild on a blank card, 15 package updates waiting on 2026-10-24 22:53 (security ones install by themselves; the 15 were not checked one by one) |
+| Status page | `http://impressora-pi.local:8025`: this repo's web dashboard as a systemd service (`cp1025-dashboard`), read-only, open to the home LAN, one reading every 10 s (about 210 ms each), runs `main` (`3d17461`). Verdict `▲ ATENÇÃO` (only the non-HP cartridge alert, a warning) |
+| Printer settings | full power-off after idle turned off (`AutoOffTime=never`, 2026-10-26); sleep after 15 minutes stays. `setup.sh` applies it on every run |
+| Survives a reboot | yes (2026-10-22 22:28): back in 57 s with CUPS, Avahi, the queue and the fast job start. Last boot 2026-10-25 02:39; this repo's page and CUPS came back by themselves |
+| Updates | security updates install every day by themselves (Debian-Security only); reboot at 04:30 when a patch needs it. 10 other packages had an update waiting on 2026-10-26 01:03 (not checked one by one) |
+| Rebuild | [`setup.sh`](setup.sh) rebuilds everything here on a fresh card. Ran 8 times on this Pi from a local copy and once as published. On 2026-10-24 the whole script ran with the printer on (exit 0, 1 min 45 s). Since #16 a printer that is off skips only the queue, and the script fails at the end. The printer settings step (#23, 2026-10-26) ran only as single commands, not inside a full run yet |
+| HDMI monitor | [pi-painel](https://github.com/iklobato/pi-painel) since 2026-10-25 (service `painel`, active), installed by its own `deploy/install.sh`. The old `dashboard.service` from this repo's `pi-dashboard/` was removed |
+| CUPS pages | `http://impressora-pi.local:631/jobs?which_jobs=all` and `/printers/HP_CP1025`, readable from the LAN; `/admin` refused from the network |
+| CUPS log | `LogLevel debug` and `MaxLogSize 0` in `/etc/cups/cupsd.conf`, set by hand while debugging, not by `setup.sh`: 28,402 of 28,536 lines in the current `error_log` are debug; the day before's log was 10.8 MB |
+| Docker | installed for a test on 2026-10-23 and removed the same night (about 71 MB); everything runs as systemd services |
+| Not done | Mac printing fix, CUPS debug log off, power-cycling the printer, trimming, Tailscale, access rules, admin over HTTPS, reserving the address in the router, a rebuild on a blank card |
 
 ## Decisions
 
@@ -40,7 +43,7 @@ The Pi also runs this repo's status page (port 8025); `setup.sh` installs both. 
 | CUPS admin | web admin reachable from LAN and tailnet, login with an `lpadmin` user, HTTPS only |
 | Updates | `unattended-upgrades`, security only; automatic reboot at 04:30 when a patch needs one (a default, easy to change) |
 | Record | idempotent `docs/raspberry/setup.sh` plus this file, so a dead SD card can be rebuilt |
-| Mac USB queue | step 0 done 2026-10-22. The Mac still has its USB queue `HP_CP1025`, which no longer reaches the printer; delete it and add the network printer (step 4) |
+| Mac | its USB queue is gone; it prints to the Pi. Its network queue must use AirPrint, not "Generic PostScript Printer" (step 4) |
 
 ## Hardware sizing (measured 2026-10-22 on the Pi 3)
 
@@ -63,14 +66,14 @@ Wired Ethernet is preferred over Wi-Fi so the printer does not drop out of Bonjo
 ### 0. Clean the Mac (done 2026-10-22)
 1. Deleted the USB queue `HP_LaserJet_CP1025`.
 2. Moved the HP CP102x PPDs and `/Library/Printers/hp/laserjet/cp1020series` to `/Library/Printers/hp-cp1020-backup-20261022/` instead of removing the whole 581 MB HP package, which carries drivers for other HP printers.
-3. Still to do (step 4): `lpadmin -x HP_CP1025` on the Mac and add the network printer instead.
+3. Later (date not recorded) the Mac's USB queue `HP_CP1025` was deleted. The network queue `HP_CP1025___impressora_pi` had been added on 2026-10-22 22:56, with the "Generic PostScript Printer" PPD (see step 4).
 
 ### 1. Prepare the SD card (done 2026-10-22)
 1. Raspberry Pi Imager 2.0.12 (`brew install --cask raspberry-pi-imager`): device Raspberry Pi 3, OS Raspberry Pi OS Lite (64-bit), hostname `impressora-pi`, user `iklo`, time zone `America/Sao_Paulo`, keyboard `br`, no Wi-Fi, SSH with public key only (`~/.ssh/impressora.pub`, a key made for this Pi), telemetry off.
 2. The first SD card was dead: the USB reader (Genesys `05e3:0751`) enumerated but reported no medium (`IOBlockStorageDriver` with no `IOMedia` under it), while another card worked in the same reader. The card used is a 32 GB one that held an old Recalbox install (2018), wiped with the owner's OK.
 3. The Pi took about 1 minute to get an address and 25 s more to open SSH on the first boot. `impressora-pi.local` answers through mDNS.
 4. Mac side: `Host impressora` added to `~/.ssh/config` (backup of the old file in `~/.ssh/config.bak-20261022`).
-5. Still to do: reserve `192.168.1.177` for the Pi in the router's DHCP.
+5. Still to do: reserve the Pi's current address in the router's DHCP.
 
 ### 2. Server setup (mostly done; [`setup.sh`](setup.sh) holds every step that is done)
 1. **Not done.** Trim: `dtoverlay=disable-bt`, `hciuart` off, `dtoverlay=disable-wifi`, `gpu_mem=16`, `cups-browsed` off (already disabled on Trixie), `usbcore.autosuspend=-1`, and every other enabled service reviewed until only network, SSH, Tailscale, CUPS and Avahi remain.
@@ -86,10 +89,10 @@ Wired Ethernet is preferred over Wi-Fi so the printer does not drop out of Bonjo
 3. Firmware upload: none needed, as expected; the printer printed straight away.
 4. Ghostscript on the Pi is 10.05.1, the same version that renders blank `pksmraw` pages on the Mac. Through the `cups` device (`gstoraster`) it renders the page correctly: the decoded test page carries the same content as `pdftoraster`'s (3.7% versus 4.4% black dots; `gstoraster` turns light gray into white where `pdftoraster` dithers it).
 
-### 4. Clients (about 5 min each, not done)
+### 4. Clients (about 5 min each; Android done, Mac broken, the rest not done)
 | Device | At home | Away (Tailscale) |
 |---|---|---|
-| Mac | appears by itself (AirPrint) | add by address: `ipp://impressora-pi.<tailnet>.ts.net/printers/HP_CP1025` |
+| Mac | appears by itself (AirPrint). When adding it, pick Use: "Secure AirPrint", not "Generic PostScript Printer": the PostScript queue added on 2026-10-22 printed nothing (job 17). That AirPrint prints is not tested yet | add by address: `ipp://impressora-pi.<tailnet>.ts.net/printers/HP_CP1025` |
 | iPhone / iPad | appears by itself | **not supported**: iOS only discovers AirPrint printers through Bonjour, which does not cross Tailscale, and cannot add one by address without a third-party app |
 | Android | default print service (already printed, see "Problems found") | add the printer by address |
 | Linux | automatic | add the IPP URL |
@@ -149,10 +152,14 @@ Change a printer setting by hand: read `/DevMgmt/<Name>Cap.xml` for the fields m
 cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py --put /DevMgmt/ProductConfigDyn.xml docs/raspberry/product-config.xml
 ```
 
-## Problems found on the Pi (2026-10-22)
+## Problems found on the Pi (from 2026-10-22)
 
 | Problem | Cause | Fix | State |
 |---|---|---|---|
+| (2026-10-26) A 4.9 MB job from the Mac printed nothing (job 17, 00:56:55); the queue showed `rastertopksm: no pages in raster` | the Mac's queue uses "Generic PostScript Printer", so it sent PostScript; `gstoraster` logged `No pages left, outputting empty file.` and gave the driver an empty raster. Why `gstoraster` found no pages is **not known**; the PostScript path is only the main suspect | re-add the printer on the Mac as Secure AirPrint and print one page; if it still fails, keep the job file (`PreserveJobFiles=Yes`) and run the filters by hand | **open** |
+| (2026-10-26) CUPS writes about 10.8 MB of log a day to the SD card | `LogLevel debug` and `MaxLogSize 0` left on by hand while debugging; `setup.sh` does not set the log level | `cupsctl --no-debug-logging`, and add it to `setup.sh` | **open** |
+| (2026-10-26) The printer powered itself off after 4 idle hours and left USB, so no job could reach it until its button was pressed | factory setting `AutoOffTime=4hour` | set to `never` over LEDM; `setup.sh` applies [`product-config.xml`](product-config.xml) | fixed; not yet checked after a power cycle |
+| (2026-10-26) `hpstatus.py` said `printer not found on USB` with the printer on | run as the plain user: the USB device node belongs to the `lp` group | run manual reads with `sudo` (the service has `SupplementaryGroups=lp`) | explained |
 | Each job sat about 50 s before printing; the owner thought prints failed and sent them again | `gstoraster` asks colord for a color profile over D-Bus. colord was installed with CUPS, but the D-Bus daemon had not loaded colord's new policy file, so colord could not own `org.freedesktop.ColorManager` ("lost name") and quit; each job waited for two 25 s `DBus.Error.NoReply` timeouts | `sudo systemctl reload dbus`. colord now answers (1.4.7) and a job starts rendering 1 s after it is queued | **fixed**; holds after a reboot (2026-10-22 22:28) |
 | First phone job: tray reported `trayEmptyOrOpen` | paper not seated | owner reseated the paper | fixed |
 | Android job asked for US Letter (`media=Letter`) | the phone's print service picked Letter although the queue advertised A4 as default; the PPD offered A4 and Letter. Also, the filter read `media=Letter` and sent a Letter page even when the raster was drawn at A4 | the Pi's PPD offers A4 only (`media-supported` = `iso_a4_210x297mm`), and the filter now trusts only `PageSize` (which CUPS sets only for a size the PPD has) or the PPD default. On a test queue a `media=Letter` job now goes out as A4 (`paper=9`) | fixed; the next phone job (14) asked for A4 and went out as A4 |
@@ -169,13 +176,15 @@ cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py --put /DevMgmt/ProductConfigD
 ## Not verified yet
 - Power-cycling the printer while the Pi runs (the queue and the dashboard should recover), and whether `AutoOffTime=never` is still set after it.
 - `setup.sh` on a blank card; it has only run on this Pi, which was already built by hand.
+- A full `setup.sh` run with the printer settings step (added 2026-10-26).
+- That the Mac prints once it uses AirPrint.
 - `setup.sh` with the printer really switched off: the new path (warn, finish, fail at the end) was simulated with a copy of the script whose USB search never matches.
 - Whether a job that starts during a dashboard reading waits or fails (`retry-job` would retry it).
 - How the color page from the phone (job 14) looks on paper: it printed, but nobody has reported the colors yet.
 - Whether the iPhone sees and prints to the Pi.
 - Tailscale printing from outside home.
 - A phone job that asks for Letter, after the fixes (only checked on the test queue).
-- Whether a Mac without the new filter could hit the old `media` fallback: the Mac's installed copy in `/Library/Printers/foo2zjs/` still has it until reinstalled.
+- Whether the Mac's own driver copy in `/Library/Printers/foo2zjs/` (still installed, older filter with the bare `media` fallback) matters: the Mac now prints through the Pi, so it is only used if the Mac gets a USB queue again.
 
 ## Trade-off accepted
 foo2zjs does not report supply levels through CUPS, so AirPrint clients do not show toner levels; the dashboard on port 8025 does. The dashboard has no login and shows the printer's and cartridges' serial numbers, so it is meant for the home LAN only. It listens on every interface: once Tailscale is installed it will also answer on the tailnet unless the Tailscale step limits it.
