@@ -21,11 +21,13 @@ from poller import MIN_INTERVAL_SECONDS, Poller, Reading, interval_after
 from printer_model import (
     LEDM_PATHS,
     Consumable,
+    LedmResource,
     PrinterReader,
     Report,
     Severity,
     capacity_impressions,
     event_hint,
+    flatten,
     parse,
     read_consumables,
     read_settings,
@@ -34,6 +36,7 @@ from printer_model import (
 from printer_summary import as_json
 from viewmodel import (
     action_items,
+    advanced_sections,
     build_payload,
     humanize,
     humanize_queue,
@@ -442,6 +445,7 @@ class LedmFakePrinter(FakeUsbPrinter):
     def __init__(self, documents):
         super().__init__([])
         self.documents = documents
+        self.requested = []
 
     def device_id(self):
         return "MFG:Hewlett-Packard;CMD:ZJS;"
@@ -454,6 +458,7 @@ class LedmFakePrinter(FakeUsbPrinter):
 
     def bulk_write(self, endpoint, payload):
         path = payload.split(b" ")[1].decode()
+        self.requested.append(path)
         body = self.documents.get(path)
         if body is None:
             self.packets = [b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"]
@@ -503,6 +508,81 @@ def test_printer_reader_builds_report_from_injected_sources_without_hardware():
     )
     missing = {LEDM_PATHS[k] for k in ("config", "logs", "events", "media", "print")}
     assert {error.split(":")[0] for error in report.errors} == missing
+
+
+def test_flatten_lists_attributes_and_text_and_numbers_repeated_siblings():
+    root = parse(
+        f"""<cap:X xmlns:cap="urn:c" {NS}><cap:Timer access="readWrite" min="1">
+<dd:Value>never</dd:Value><dd:Value>4hours</dd:Value></cap:Timer><dd:Single>A4</dd:Single></cap:X>""",
+        "X",
+    )
+    assert list(flatten(root)) == [
+        ("Timer @access", "readWrite"),
+        ("Timer @min", "1"),
+        ("Timer/Value[1]", "never"),
+        ("Timer/Value[2]", "4hours"),
+        ("Single", "A4"),
+    ]
+
+
+DISCOVERY = f"""<ledm:DiscoveryTree xmlns:ledm="urn:l" {NS}>
+<ledm:SupportedTree><dd:ResourceURI>/DevMgmt/ProductStatusDyn.xml</dd:ResourceURI></ledm:SupportedTree>
+<ledm:SupportedTree><dd:ResourceURI>/DevMgmt/SecurityCap.xml</dd:ResourceURI></ledm:SupportedTree>
+<ledm:SupportedTree><dd:ResourceURI>/DevMgmt/InternalPrintDyn.xml</dd:ResourceURI></ledm:SupportedTree>
+</ledm:DiscoveryTree>"""
+SECURITY_CAP = f'<sec:SecurityCap xmlns:sec="urn:x" {NS}><dd:Password access="readOnly"/></sec:SecurityCap>'
+
+
+def test_reader_reads_every_listed_resource_but_rereads_extras_only_after_refresh():
+    printer = LedmFakePrinter(
+        {
+            LEDM_PATHS["status"]: STATUS,
+            "/DevMgmt/DiscoveryTree.xml": DISCOVERY,
+            "/DevMgmt/SecurityCap.xml": SECURITY_CAP,
+        }
+    )
+    clock = iter(datetime(2026, 10, 26, 0, minute) for minute in (0, 5, 10))
+    reader = PrinterReader(
+        connect=lambda: nullcontext(printer),
+        topology=dict,
+        queue_state=str,
+        clock=lambda: next(clock),
+        extra_refresh=timedelta(minutes=10),
+    )
+    first = reader.read()
+    assert list(first.resources)[1:] == [
+        "/DevMgmt/DiscoveryTree.xml",
+        "/DevMgmt/SecurityCap.xml",
+        "/DevMgmt/InternalPrintDyn.xml",
+    ]
+    assert first.resources["/DevMgmt/SecurityCap.xml"].rows == [
+        ("Password @access", "readOnly")
+    ]
+    assert first.resources["/DevMgmt/InternalPrintDyn.xml"].status.endswith(
+        "404 Not Found"
+    )
+    assert "/DevMgmt/InternalPrintDyn.xml" not in " ".join(first.errors)
+    assert first.resources[LEDM_PATHS["status"]].read_at.minute == 0
+    reader.read()
+    third = reader.read()
+    assert printer.requested.count("/DevMgmt/SecurityCap.xml") == 2
+    assert printer.requested.count(LEDM_PATHS["status"]) == 3
+    assert third.resources["/DevMgmt/SecurityCap.xml"].read_at.minute == 10
+
+
+def test_advanced_sections_split_device_id_and_keep_each_resource_status():
+    report = sample_report()
+    report.device_id = "MFG:Hewlett-Packard;CMD:ZJS,PJL;"
+    report.resources = {
+        "/DevMgmt/MediaCap.xml": LedmResource(report.read_at, "HTTP/1.1 404 Not Found")
+    }
+    sections = {s["title"]: s for s in advanced_sections(report)}
+    assert sections["IEEE 1284 Device ID"]["rows"] == [
+        ["MFG", "Hewlett-Packard"],
+        ["CMD", "ZJS,PJL"],
+    ]
+    assert sections["MediaCap"]["status"] == "HTTP/1.1 404 Not Found"
+    assert sections["MediaCap"]["rows"] == []
 
 
 def test_ledm_client_drains_stale_bytes_and_reads_zero_padded_chunked_reply():

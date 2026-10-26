@@ -305,6 +305,52 @@ def humanized_rows(rows):
     return {key: humanize(fmt(value)) for key, value in rows.items()}
 
 
+def device_id_rows(device_id):
+    parts = (part.partition(":") for part in device_id.split(";"))
+    return [[name.strip(), value.strip()] for name, _, value in parts if name.strip()]
+
+
+def advanced_sections(report):
+    """Every raw value the printer gives, one block per source, for the folded section."""
+    read_at = f"{report.read_at:%H:%M:%S}"
+    raw_usb = [
+        [f"{source}.{key}", fmt(value)]
+        for source, values in (
+            ("usb", report.usb),
+            ("port", report.port),
+            ("topology", report.topology),
+        )
+        for key, value in values.items()
+    ]
+    sections = [
+        {
+            "title": "IEEE 1284 Device ID",
+            "source": "USB GET_DEVICE_ID",
+            "read_at": read_at,
+            "status": "",
+            "rows": device_id_rows(report.device_id),
+        },
+        {
+            "title": "USB (bruto)",
+            "source": "descritores USB e GET_PORT_STATUS",
+            "read_at": read_at,
+            "status": "",
+            "rows": raw_usb,
+        },
+    ]
+    for path, resource in report.resources.items():
+        sections.append(
+            {
+                "title": path.rsplit("/", 1)[-1].removesuffix(".xml"),
+                "source": f"LEDM {path}",
+                "read_at": f"{resource.read_at:%H:%M:%S}",
+                "status": resource.status,
+                "rows": [list(row) for row in resource.rows],
+            }
+        )
+    return sections
+
+
 def action_items(report, warn_percent):
     """What the user should do now, as (subject, advice, consumable color or None)."""
     items = [
@@ -436,6 +482,7 @@ def build_payload(reading, warn_percent):
         "endpoints": endpoint_rows(report),
         "identity": humanized_rows(report.identity),
         "settings": humanized_rows(report.settings),
+        "advanced": advanced_sections(report),
         "latency_ms": report.latency_ms,
         "errors": report.errors,
     }
