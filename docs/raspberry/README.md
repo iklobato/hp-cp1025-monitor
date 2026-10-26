@@ -121,6 +121,7 @@ bash setup.sh
 | driver | builds foo2zjs, `zjsdecode`, `rastertopksm`; installs the filter and its two helpers in `/usr/lib/cups/filter` |
 | PPD | `/usr/local/share/cp1025/HP_CP1025-pi.ppd`: the repo PPD with the Linux filter path, A4 only, CMYK as PPD default |
 | queue | finds the USB URI (`usb://HP/LaserJet%20CP%201025?serial=<serial>`, retried up to 5 times), creates `HP_CP1025` shared, monochrome by default, `retry-job`, system default; `cupsctl --share-printers PreserveJobFiles=No WebInterface=yes`. With the printer off it warns, leaves the queue as it is, and the script carries on and fails at the end |
+| printer settings | only when the printer is found: `hpstatus.py --put /DevMgmt/ProductConfigDyn.xml` with [`product-config.xml`](product-config.xml) (no power-off after idle; sleep after 15 minutes stays), then reads the setting back; if it is not `never`, the script fails at the end |
 | security updates | `20auto-upgrades` and `52cp1025-unattended` in `/etc/apt/apt.conf.d/` |
 | dashboard | `/etc/systemd/system/cp1025-dashboard.service`: `printer_summary.py --web --host 0.0.0.0 --port 8025 --every 10`, as the admin user with the `lp` group (which owns the printer's USB device node) |
 
@@ -142,6 +143,12 @@ Read one LEDM resource by hand (stop the dashboard first if it must not be inter
 cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py /DevMgmt/ProductStatusDyn.xml
 ```
 
+Change a printer setting by hand: read `/DevMgmt/<Name>Cap.xml` for the fields marked `readWrite` and their values, write an XML with only those fields (copy [`product-config.xml`](product-config.xml)), then:
+
+```bash
+cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py --put /DevMgmt/ProductConfigDyn.xml docs/raspberry/product-config.xml
+```
+
 ## Problems found on the Pi (2026-10-22)
 
 | Problem | Cause | Fix | State |
@@ -160,7 +167,7 @@ cd ~/hp-cp1025-monitor && sudo python3 hpstatus.py /DevMgmt/ProductStatusDyn.xml
 | When the printer is off, `setup.sh` stops at the queue step and leaves the status page (port 8025) stopped | the queue step stops `cp1025-dashboard` before it looks for the printer and exits without starting it again | a missing printer no longer stops the script: it prints a warning, runs every other step (the status page is started again in its own step), and fails at the end saying only the queue is left | fixed |
 
 ## Not verified yet
-- Power-cycling the printer while the Pi runs (the queue and the dashboard should recover).
+- Power-cycling the printer while the Pi runs (the queue and the dashboard should recover), and whether `AutoOffTime=never` is still set after it.
 - `setup.sh` on a blank card; it has only run on this Pi, which was already built by hand.
 - `setup.sh` with the printer really switched off: the new path (warn, finish, fail at the end) was simulated with a copy of the script whose USB search never matches.
 - Whether a job that starts during a dashboard reading waits or fails (`retry-job` would retry it).

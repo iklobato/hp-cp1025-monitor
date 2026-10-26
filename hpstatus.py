@@ -4,9 +4,11 @@ UsbPrinter owns the device handle (descriptors, IEEE 1284 printer-class requests
 transfers). LedmClient speaks HP's LEDM protocol, HTTP/1.1 over the vendor USB interface.
 
 Usage: python3 hpstatus.py [LEDM_PATH ...]
+       python3 hpstatus.py --put LEDM_PATH XML_FILE
 Without paths it prints the IEEE 1284 device id, the printer-class port status and the
 USB interface/endpoint map. Each LEDM_PATH (e.g. /DevMgmt/ConsumableConfigDyn.xml) is
-fetched over LEDM and printed.
+fetched over LEDM and printed. --put sends XML_FILE as the new value of LEDM_PATH; the
+matching ...Cap.xml lists which fields are readWrite and the values they take.
 """
 
 import ctypes
@@ -253,7 +255,7 @@ class LedmResponse:
 
 
 class LedmClient:
-    """HTTP/1.1 GET over the LEDM vendor interface (class ff/04) of a UsbPrinter."""
+    """HTTP/1.1 GET and PUT over the LEDM vendor interface (class ff/04) of a UsbPrinter."""
 
     def __init__(self, printer):
         self._printer = printer
@@ -269,7 +271,19 @@ class LedmClient:
         return self.fetch(path).body
 
     def fetch(self, path):
-        request = f"GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".encode()
+        return self._send(
+            f"GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".encode()
+        )
+
+    def put(self, path, xml):
+        """Write the fields in xml; the firmware answers 200 with an empty body."""
+        head = (
+            f"PUT {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/xml\r\n"
+            f"Content-Length: {len(xml)}\r\nConnection: close\r\n\r\n"
+        )
+        return self._send(head.encode() + xml)
+
+    def _send(self, request):
         raw = self._exchange(request)
         server = re.search(
             rb"^server:\s*(.+?)\r?$", raw.partition(b"\r\n\r\n")[0], re.I | re.M
@@ -335,7 +349,20 @@ def http_body(raw):
     return out.decode(errors="replace")
 
 
+def put_from_file(path, xml_file):
+    with open(xml_file, "rb") as source:
+        xml = source.read()
+    with UsbPrinter.open() as usb:
+        response = LedmClient(usb).put(path, xml)
+    print("PUT", path, response.status)
+    return 0 if response.status.split(" ")[1:2] == ["200"] else 1
+
+
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--put"]:
+        if len(sys.argv) != 4:
+            sys.exit(__doc__)
+        sys.exit(put_from_file(sys.argv[2], sys.argv[3]))
     with UsbPrinter.open() as usb:
         print("ENDPOINTS:", usb.endpoint_map())
         print("DEVICE_ID:", usb.device_id())

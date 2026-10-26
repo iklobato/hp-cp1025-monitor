@@ -135,6 +135,8 @@ macOS IORegistry reports `Bus Power Available` in 2 mA units (250 = the 500 mA t
 - Leftover bytes from an earlier response must be drained before the next request, or the next read returns the previous resource. Responses are checked against the expected XML root element for that reason.
 - `/DevMgmt/DiscoveryTree.xml` lists 25 resources. The `*Cap.xml` ones list every state the printer can report: 32 status categories, 8 consumable states (including brand `clone`), event log size 10.
 - Event capabilities: `PowerUpEvent` and `AlertTableChanged`, delivered over USB raw on interface `FF#04#01`.
+- Settings are written with a `PUT` of the same `...Dyn.xml` path, carrying only the fields to change, with `Content-Type: text/xml` and a `Content-Length`. The firmware answers `HTTP/1.1 200 OK` with an empty body. Each `...Cap.xml` marks fields `readWrite` and lists the values they accept. Writable on this unit (2026-10-26): power-off time, sleep delay, power-on and periodic calibration, country, Smart Install (`ProductConfigCap`); print density and `AutoContinue` (`PrintConfigCap`); what to do with no paper and how long to wait (`MediaHandlingCap`); what to do at very low toner (`ConsumableConfigCap`).
+- Two separate power timers in `ProductConfigDyn`: `AutoOffAutoOn/AutoOffDelay/AutoOffDelayTime` (15 minutes; 1 minute to 1 hour, no `never`) is sleep, and a job wakes the printer from it; `AutoOffTime` (factory `4hour`; `never` to 24 hours) is the full power-off, after which the printer is gone from USB until someone presses the power button. The firmware reports `4hour` while its Cap list spells it `4hours`.
 
 ### Counters on this unit (2026-10-18)
 
@@ -175,6 +177,7 @@ The log keeps only the last 10 events (`EventLogMaxSize` = 10), all at page 1,30
     - #19 and #20 (refactors, no visible change): shared number and loading-text helpers in `ui.py`, and `sources.py` (2,400 lines) split into one module per data source. Proven by 29 renders that are byte-identical before and after.
     - A split of `page_weather.py` and `page_system.py` was started and cancelled by the owner; nothing of it was kept.
 16. **HDMI monitor replaced** (2026-10-25): the redesigned monitor, [pi-painel](https://github.com/iklobato/pi-painel), was installed on the Pi and the old one removed the same night: `dashboard.service`, `~/dashboard` and three backup copies of it, `~/.cache/pi-dashboard` (32 MB) and `/etc/pi-dashboard` (its OpenRouter key was moved to `/etc/painel/painel.env` first). After a reboot at 02:39 the new service was active again at 02:40:27 using 112 MB; this repo's status page and CUPS stayed active. `setup.sh` no longer installs a monitor; `consoleblank=0` is now added by pi-painel's installer.
+17. **Auto power-off removed** (2026-10-26): the printer powered itself off after 4 hours idle (`AutoOffTime=4hour`) and then dropped off USB, so no job could reach it. Set to `never` over LEDM from the Pi (`PUT` answered 200, read back `never`). Sleep after 15 minutes stays, a job wakes the printer. `hpstatus.py --put` does the write, `setup.sh` applies `docs/raspberry/product-config.xml` and checks it.
 
 ## Still open, in order
 
@@ -202,6 +205,7 @@ HDMI monitor: the old code and its known bugs were removed on 2026-10-25; the ne
 
 For the Pi's own open questions (reboot, color on paper, iPhone, Tailscale) see [raspberry/README.md](raspberry/README.md#not-verified-yet). For the printer and the monitor:
 
+- That `AutoOffTime=never` survives the power button and a power cut: it read back `never` right after the write, nobody has switched the printer off and on since.
 - Why the printer refused every page on 2026-10-21 and accepted them on 2026-10-22 with the same cartridge alert.
 - Color printing on paper, and the color quality of the plain Bayer dither (Mac) and of `gstoraster`'s output (Pi).
 - The live change-feed panel with a real change. The diff logic is tested with simulated readings, and history.jsonl did record the real reseating transitions above, but nobody watched the panel while it happened.
