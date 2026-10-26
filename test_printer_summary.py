@@ -37,6 +37,7 @@ from printer_model import (
     event_hint,
     parse,
     read_consumables,
+    read_settings,
     years_since,
 )
 from poller import MIN_INTERVAL_SECONDS, Poller, Reading, interval_after
@@ -537,6 +538,21 @@ def test_ledm_client_put_sends_body_with_its_length_and_reads_the_status():
         )
     ]
     assert response.status == "HTTP/1.1 200 OK" and response.body == ""
+
+
+def test_settings_tell_sleep_delay_apart_from_power_off_time():
+    root = parse(
+        f"""<prdcfgdyn2:ProductConfigDyn xmlns:prdcfgdyn2="urn:p2" {NS}>
+<prdcfgdyn2:ProductSettings><dd:AutoOffTime>never</dd:AutoOffTime>
+<dd:AutoOffAutoOn><dd:AutoOffDelay><dd:AutoOffDelayTime>15_minutes</dd:AutoOffDelayTime>
+</dd:AutoOffDelay></dd:AutoOffAutoOn></prdcfgdyn2:ProductSettings>
+</prdcfgdyn2:ProductConfigDyn>""",
+        "ProductConfigDyn",
+    )
+    settings = read_settings(root, None, None)
+    assert settings["Dorme após"] == "15_minutes"
+    assert settings["Desliga sozinha após"] == "never"
+    assert humanize("never") == "nunca" and humanize("4hour") == "4 h"
 
 
 def test_response_complete_accepts_zero_padded_last_chunk_only_at_the_end():

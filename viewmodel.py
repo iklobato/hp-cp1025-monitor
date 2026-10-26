@@ -38,6 +38,7 @@ VALUE_WORDS = {
     "acknowledge": "só avisa",
     "stop": "para de imprimir",
     "continue": "continua",
+    "never": "nunca",
     "True": "sim",
     "False": "não",
 }

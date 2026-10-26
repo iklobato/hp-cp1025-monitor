@@ -386,9 +386,8 @@ def read_settings(config_root, media_root, print_root):
     result = {
         "País": text(settings, "CountryAndRegionName"),
         "Idioma": text(settings, "ProductLanguage/DeviceLanguage"),
-        "Desliga sozinha após": text(
-            settings, "AutoOffAutoOn/AutoOffDelay/AutoOffDelayTime"
-        ),
+        "Dorme após": text(settings, "AutoOffAutoOn/AutoOffDelay/AutoOffDelayTime"),
+        "Desliga sozinha após": text(settings, "AutoOffTime"),
         "Calibração ao ligar": text(settings, "PowerOnCalibration"),
         "Calibração periódica": text(settings, "EngineCalibrationTimer"),
         "Duplex": text(settings, "Duplex"),
