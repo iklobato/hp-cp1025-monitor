@@ -103,12 +103,18 @@ hpstatus (UsbPrinter, LedmClient)  ->  printer_model (PrinterReader -> Report)  
 | `dashboard.py` | `rich` terminal rendering only |
 | `web_dashboard.py` + `dashboard.html` | local web server (SSE) and the page, which only lays out pre-formatted strings |
 | `printer_summary.py` | CLI entry point |
-| `test_printer_summary.py` | 41 tests; run with `python3 -m pytest -q test_printer_summary.py` (no printer needed: USB, `ioreg` and `lpstat` are faked). If a globally installed pytest plugin breaks the run, add `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` |
+| `test_printer_summary.py` | 42 tests; run with `python3 -m pytest -q test_printer_summary.py` (no printer needed: USB, `ioreg` and `lpstat` are faked). If a globally installed pytest plugin breaks the run, add `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` |
 
 Dump a raw LEDM resource:
 
 ```bash
 python3 hpstatus.py /DevMgmt/ConsumableConfigDyn.xml
+```
+
+Write a setting (only the fields in the file change; the matching `...Cap.xml` lists what is writable):
+
+```bash
+python3 hpstatus.py --put /DevMgmt/ProductConfigDyn.xml docs/raspberry/product-config.xml
 ```
 
 ## Limits

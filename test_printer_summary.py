@@ -525,6 +525,20 @@ def test_ledm_client_drains_stale_bytes_and_reads_zero_padded_chunked_reply():
     assert response.wire_bytes == len(reply)
 
 
+def test_ledm_client_put_sends_body_with_its_length_and_reads_the_status():
+    printer = FakeUsbPrinter([None, b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"])
+    xml = b"<dd:AutoOffTime>never</dd:AutoOffTime>"
+    response = hpstatus.LedmClient(printer).put("/DevMgmt/X.xml", xml)
+    assert printer.writes == [
+        (
+            0x02,
+            b"PUT /DevMgmt/X.xml HTTP/1.1\r\nHost: localhost\r\nContent-Type: text/xml\r\n"
+            b"Content-Length: 38\r\nConnection: close\r\n\r\n" + xml,
+        )
+    ]
+    assert response.status == "HTTP/1.1 200 OK" and response.body == ""
+
+
 def test_response_complete_accepts_zero_padded_last_chunk_only_at_the_end():
     head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
     assert hpstatus.response_complete(head + b"0003\r\nabc\r\n0000\r\n\r\n")

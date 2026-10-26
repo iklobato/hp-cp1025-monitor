@@ -89,11 +89,18 @@ done
 # A switched-off printer only leaves the queue undone: the steps below still run (they restart
 # the dashboard stopped above), and the script fails at the end.
 queue_missing=no
+settings_failed=no
 if [[ -n "$uri" ]]; then
 	sudo lpadmin -p "$QUEUE" -D "HP CP1025" -L Casa -E -v "$uri" -P "$PPD_PI" \
 		-o printer-is-shared=true -o print-color-mode-default=monochrome \
 		-o printer-error-policy=retry-job
 	sudo lpadmin -d "$QUEUE"
+	# Still inside the dashboard pause: one USB reader at a time.
+	step "printer settings (no power-off after idle)"
+	sudo python3 "$REPO_DIR/hpstatus.py" --put /DevMgmt/ProductConfigDyn.xml \
+		"$REPO_DIR/docs/raspberry/product-config.xml" || true
+	config=$(sudo python3 "$REPO_DIR/hpstatus.py" /DevMgmt/ProductConfigDyn.xml) || true
+	[[ $config == *'<dd:AutoOffTime>never</dd:AutoOffTime>'* ]] || settings_failed=yes
 else
 	queue_missing=yes
 	printf 'WARNING: printer not found on USB: queue %s not changed\n' "$QUEUE" >&2
@@ -147,3 +154,5 @@ printf 'job list:    http://%s.local:631/jobs?which_jobs=all\n' "$(hostname)"
 printf 'dashboard:   http://%s.local:%s\n' "$(hostname)" "$DASHBOARD_PORT"
 [[ $queue_missing == no ]] ||
 	fail "printer not found on USB: everything else is set up; switch it on and run again for the queue"
+[[ $settings_failed == no ]] ||
+	fail "printer still has a power-off timer: run hpstatus.py --put by hand (docs/raspberry/README.md)"
