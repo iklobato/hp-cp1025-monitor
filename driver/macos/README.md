@@ -2,6 +2,8 @@
 
 Status: **works on paper** since 2026-10-22 16:01 on macOS 14.6.1 (Intel): a one-page A4 document printed from the normal macOS Print dialog, black and white, sent as 71,095 bytes of ZJS (CUPS job 22). Color has only been checked by decoding the generated ZJS back into an image, not on paper yet.
 
+Since 2026-10-22 evening the printer sits on a Raspberry Pi, which runs the same filter, `rastertopksm` and PPD under Linux CUPS ([../../docs/raspberry/README.md](../../docs/raspberry/README.md)). The Mac's USB queue was deleted later; the files below are still installed on the Mac but no queue uses them. The Mac now prints through the Pi's network queue, which is broken while it uses "Generic PostScript Printer" (see the Pi README). The install steps below stay valid for a Mac with the printer on its own USB.
+
 ## Why this exists
 
 | Attempt | Result |

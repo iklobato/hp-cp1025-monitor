@@ -1,6 +1,6 @@
 # hp-cp1025-monitor
 
-Low-level status monitor for the **HP LaserJet CP1025** over USB on macOS. It talks to the printer directly with libusb, reads HP's LEDM interface (HTTP tunnelled over a vendor USB interface), and shows toner levels, cartridge chip data, counters, the printer's event log and the USB/controller hardware in a terminal UI or a live web page.
+Low-level status monitor, settings tool and CUPS driver for the **HP LaserJet CP1025** over USB, on macOS and on a Raspberry Pi print server. It talks to the printer directly with libusb, reads HP's LEDM interface (HTTP tunnelled over a vendor USB interface), and shows toner levels, cartridge chip data, counters, the printer's event log, its settings and the USB/controller hardware in a terminal UI or a live web page. It can also change the printer's settings (for example, turn off its automatic power-off).
 
 No HP software is needed to read the status. The printer does not need to be able to print.
 
@@ -12,17 +12,17 @@ The CP1025 is a host-based printer (ZJS). On macOS 14 the last HP driver Apple s
 
 See [docs/FINDINGS.md](docs/FINDINGS.md) for everything that was found along the way.
 
-## Status
+## Status (2026-10-26)
 
-Monitoring works (terminal and web, about 250 ms per full reading) while the printer is on the Mac's USB. **Printing works from macOS 14** since 2026-10-22 with the foo2zjs-based driver in [driver/macos/](driver/macos/README.md), which replaces HP's broken one; a black-and-white page is confirmed on paper, color is not yet.
+The printer sits on a **Raspberry Pi 3 network print server** (CUPS + the foo2zjs driver in [driver/macos/](driver/macos/README.md), shared as AirPrint). Phones and the Pi print through it in about 13 to 20 s per page. The Mac's network queue is broken: it was added with the "Generic PostScript Printer" driver and its first job came out with no pages; the fix is the first item of the next steps. The Pi serves this repo's status page to the home LAN at `http://impressora-pi.local:8025`, installs security updates by itself, and is rebuilt by `docs/raspberry/setup.sh`. Tailscale and access rules are still to do: [docs/raspberry/README.md](docs/raspberry/README.md).
 
-Since the evening of 2026-10-22 the printer sits on a **Raspberry Pi 3 network print server** that reuses the same driver chain (CUPS + foo2zjs, shared as AirPrint). It prints from the network in about 13 to 18 s per page, serves this repo's web dashboard to the home LAN at `http://impressora-pi.local:8025`, installs security updates by itself, and can be rebuilt with `docs/raspberry/setup.sh`; Tailscale and access rules are still to do: [docs/raspberry/README.md](docs/raspberry/README.md). The ordered next steps and what is still unverified are in [docs/FINDINGS.md](docs/FINDINGS.md#still-open-in-order).
+The printer's full power-off after 4 idle hours is turned off (2026-10-26); it still sleeps after 15 minutes and wakes for a job.
 
-The same Pi drives an HDMI monitor. Since 2026-10-25 that monitor is a separate project, [pi-painel](https://github.com/iklobato/pi-painel) (private), installed with its own `deploy/install.sh`; it reads this repo's status page on port 8025 for its printer screen.
+The same Pi drives an HDMI monitor, a separate project since 2026-10-25: [pi-painel](https://github.com/iklobato/pi-painel) (private). It reads this repo's `/api/status` for its printer screen.
 
 The status verdict is `✔ PRONTA`, `▲ ATENÇÃO` or `✖ COM PROBLEMAS`. The non-HP cartridge alert (`incompatibleConsumable`, `nonHPSupplyDetected`, `usedConsumable`) is a warning, because this printer keeps printing with it; every other printer alert labelled Error is an error. Every alert is also listed in "O que fazer agora".
 
-Picking this up (person or agent): start at [docs/FINDINGS.md](docs/FINDINGS.md#status-last-checked-2026-10-24-2253), which says where everything runs, what is done, what is open, the known bugs and what is still unverified.
+Picking this up (person or agent): read [docs/WORKING.md](docs/WORKING.md), then [docs/FINDINGS.md](docs/FINDINGS.md#start-here): current state, next steps in order, known bugs, what is unverified, and everything learned about the printer.
 
 ## Requirements
 
@@ -31,7 +31,7 @@ Picking this up (person or agent): start at [docs/FINDINGS.md](docs/FINDINGS.md#
 - `libusb-1.0` (`brew install libusb`)
 - `rich` for the terminal UI (`pip install -r requirements.txt`)
 
-The CUPS queue name in `printer_model.py` (`QUEUE_NAME`) is only used to report whether the macOS queue is paused.
+The CUPS queue name in `printer_model.py` (`QUEUE_NAME`) is only used to report whether the local CUPS queue (`HP_CP1025` on the Pi) is paused.
 
 ## Usage
 
@@ -78,11 +78,11 @@ Device serial numbers and the UUID are masked in all screenshots.
 |---|---|---|
 | IEEE 1284 printer class | USB control requests `GET_DEVICE_ID`, `GET_PORT_STATUS` | device id string, online / error / paper-out bits |
 | USB descriptors | control requests on EP0 | USB version, speed, power draw, every interface and endpoint |
-| HP LEDM | HTTP/1.1 over USB interface 1 (class `ff/04/01`), bulk EP `0x02` / `0x82` | status and alerts, consumables, usage counters, product config, event log, media and print settings |
+| HP LEDM | HTTP/1.1 over USB interface 1 (class `ff/04/01`), bulk EP `0x02` / `0x82` | status and alerts, consumables, usage counters, product config, event log, media and print settings, every value each setting accepts; `PUT` changes settings |
 | macOS IORegistry | `ioreg -a -p IOUSB -l` | hub chain, USB address, port, location id, bus power available, power state |
-| CUPS | `lpstat -p` | whether the macOS queue is paused and why |
+| CUPS | `lpstat -p` | whether the queue is paused and why |
 
-LEDM resources used: `ProductStatusDyn`, `ConsumableConfigDyn`, `ProductUsageDyn`, `ProductConfigDyn`, `ProductLogsDyn`, `EventMgmt/EventTable`, `MediaHandlingDyn`, `PrintConfigDyn`. The printer lists all 25 it supports at `/DevMgmt/DiscoveryTree.xml`.
+LEDM resources read on every reading: `ProductStatusDyn`, `ConsumableConfigDyn`, `ProductUsageDyn`, `ProductConfigDyn`, `ProductLogsDyn`, `EventMgmt/EventTable`, `MediaHandlingDyn`, `PrintConfigDyn`. The printer lists 26 at `/DevMgmt/DiscoveryTree.xml`; the other 18 are read every 10 minutes for the "Avançado" section.
 
 ## Layout
 
@@ -98,7 +98,7 @@ hpstatus (UsbPrinter, LedmClient)  ->  printer_model (PrinterReader -> Report)  
 |---|---|
 | `hpstatus.py` | USB transport: `UsbPrinter` owns the libusb handle (descriptors, IEEE 1284 requests, bulk transfers, context manager); `LedmClient` speaks HTTP over the LEDM interface. Also a small CLI to dump any LEDM path. |
 | `macos_usb.py` | where the printer sits on the Mac's USB tree, from `ioreg -a` |
-| `printer_model.py` | `PrinterReader` takes every I/O source as an argument and builds a `Report`; `Consumable`, `Severity`, change detection, LEDM parsing |
+| `printer_model.py` | `PrinterReader` takes every I/O source as an argument and builds a `Report`; `Consumable`, `Severity`, change detection, LEDM parsing; `flatten` and `LedmResource` for the raw "Avançado" data, with the 10 minute cache of the extra resources |
 | `history.py` | `history.jsonl` snapshots, sparklines, toner run-out forecast |
 | `poller.py` | `Poller.tick()`: one reading, history, diff and adaptive cadence, returned as a `Reading`. Shared by `--live`, `--watch`, the one-shot modes and the web server |
 | `viewmodel.py` | every Portuguese string, formatter and panel row, and the web payload. No rendering library |
@@ -110,7 +110,7 @@ hpstatus (UsbPrinter, LedmClient)  ->  printer_model (PrinterReader -> Report)  
 Dump a raw LEDM resource:
 
 ```bash
-python3 hpstatus.py /DevMgmt/ConsumableConfigDyn.xml
+python3 hpstatus.py /DevMgmt/ConsumableConfigDyn.xml   # on the Pi: sudo, or the lp group
 ```
 
 Write a setting (only the fields in the file change; the matching `...Cap.xml` lists what is writable):
