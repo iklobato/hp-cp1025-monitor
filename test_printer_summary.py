@@ -1,8 +1,8 @@
 import io
 import json
 import tempfile
-from contextlib import contextmanager, nullcontext
 import threading
+from contextlib import contextmanager, nullcontext
 from datetime import date, datetime, timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -13,10 +13,25 @@ from rich.console import Console
 
 import history
 import hpstatus
-from hpstatus import UsbError
 import macos_usb
 import web_dashboard
 from dashboard import live_layout, render
+from hpstatus import UsbError
+from poller import MIN_INTERVAL_SECONDS, Poller, Reading, interval_after
+from printer_model import (
+    LEDM_PATHS,
+    Consumable,
+    PrinterReader,
+    Report,
+    Severity,
+    capacity_impressions,
+    event_hint,
+    parse,
+    read_consumables,
+    read_settings,
+    years_since,
+)
+from printer_summary import as_json
 from viewmodel import (
     action_items,
     build_payload,
@@ -27,21 +42,6 @@ from viewmodel import (
     short_hop,
     usb_bus_rows,
 )
-from printer_model import (
-    LEDM_PATHS,
-    Severity,
-    Consumable,
-    PrinterReader,
-    Report,
-    capacity_impressions,
-    event_hint,
-    parse,
-    read_consumables,
-    read_settings,
-    years_since,
-)
-from poller import MIN_INTERVAL_SECONDS, Poller, Reading, interval_after
-from printer_summary import as_json
 
 NS = 'xmlns:dd="http://www.hp.com/schemas/imaging/con/dictionaries/1.0/"'
 
@@ -770,9 +770,9 @@ def test_feed_survives_any_error_and_shows_it_next_to_the_last_reading():
 
 def test_page_shows_the_feed_error_before_the_first_reading():
     page = Path(web_dashboard.PAGE).read_text()
-    assert "renderWaiting(d)" in page and "function renderWaiting" in page, (
-        "printer off at start: the page must say why, not 'conectando…' forever"
-    )
+    assert (
+        "renderWaiting(d)" in page and "function renderWaiting" in page
+    ), "printer off at start: the page must say why, not 'conectando…' forever"
 
 
 def test_json_output_is_valid_and_carries_severity():

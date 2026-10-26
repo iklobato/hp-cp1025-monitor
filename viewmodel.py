@@ -12,9 +12,9 @@ from printer_model import (
     CONSUMABLE_STATES_PT,
     OK_STATES,
     QUEUE_NAME,
-    Severity,
     STATUS_CATEGORIES_PT,
     SUPPLY_ORIGIN_ALERTS,
+    Severity,
     event_hint,
     years_since,
 )
@@ -214,9 +214,11 @@ def usb_bus_rows(report):
     available = topo.get("bus_power_available_ma")
     return {
         # The hub chain comes from the macOS IORegistry; elsewhere (the Raspberry Pi) it is empty.
-        "Caminho": f"Mac ▸ {chain} ▸ porta {fmt(topo.get('port'))}"
-        if topo
-        else "só no macOS (IORegistry)",
+        "Caminho": (
+            f"Mac ▸ {chain} ▸ porta {fmt(topo.get('port'))}"
+            if topo
+            else "só no macOS (IORegistry)"
+        ),
         "Hub": hops[-1] if hops else "–",
         "Endereço": f"{fmt(topo.get('address'))} · location {fmt(topo.get('location'))}",
         "Velocidade": f"{fmt(usb.get('speed'))} · USB {fmt(usb.get('usb_version'))}",
