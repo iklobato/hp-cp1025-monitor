@@ -6,8 +6,9 @@ import shlex
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import IntEnum
 
 import hpstatus
@@ -95,6 +96,10 @@ LEDM_PATHS = {
     "media": "/DevMgmt/MediaHandlingDyn.xml",
     "print": "/DevMgmt/PrintConfigDyn.xml",
 }
+DISCOVERY_PATH = "/DevMgmt/DiscoveryTree.xml"
+# The resources outside LEDM_PATHS are mostly capability lists that never change; reading all
+# 26 takes about 0.4 s, and while the USB device is held CUPS may not see the printer.
+EXTRA_REFRESH = timedelta(minutes=10)
 
 
 class Severity(IntEnum):
@@ -120,6 +125,46 @@ def parse(xml_text, expected_root):
     if root.tag != expected_root:
         raise ValueError(f"expected <{expected_root}>, got <{root.tag}>")
     return root
+
+
+def flatten(element, path=""):
+    """Every attribute and text under element as (path, value); repeated siblings get [n]."""
+    for name, value in element.attrib.items():
+        yield f"{path} @{local(name)}".strip(), value
+    value = (element.text or "").strip()
+    if value:
+        yield path or element.tag, value
+    repeats = Counter(child.tag for child in element)
+    seen = Counter()
+    for child in element:
+        seen[child.tag] += 1
+        name = (
+            child.tag if repeats[child.tag] == 1 else f"{child.tag}[{seen[child.tag]}]"
+        )
+        yield from flatten(child, f"{path}/{name}" if path else name)
+
+
+@dataclass
+class LedmResource:
+    """One LEDM document as the advanced section shows it: every field, flattened."""
+
+    read_at: datetime
+    status: str
+    rows: list = field(default_factory=list)
+
+
+def read_resource(ledm, path, read_at):
+    try:
+        response = ledm.fetch(path)
+    except hpstatus.UsbError as error:
+        return LedmResource(read_at, f"erro USB: {error}")
+    if response.status.split(" ")[1:2] != ["200"]:
+        return LedmResource(read_at, response.status)
+    try:
+        root = strip_namespaces(ET.fromstring(response.body.strip()))
+    except ET.ParseError as error:
+        return LedmResource(read_at, f"XML inválido: {error}")
+    return LedmResource(read_at, response.status, list(flatten(root)))
 
 
 def text(element, path, default=""):
@@ -234,6 +279,7 @@ class Report:
     events: list = field(default_factory=list)
     device_events: list = field(default_factory=list)
     errors: list = field(default_factory=list)
+    resources: dict = field(default_factory=dict)
 
     @property
     def queue_paused(self):
@@ -508,11 +554,15 @@ class PrinterReader:
         topology=macos_usb.usb_topology,
         queue_state=cups_queue_state,
         clock=datetime.now,
+        extra_refresh=EXTRA_REFRESH,
     ):
         self._connect = connect
         self._topology = topology
         self._queue_state = queue_state
         self._clock = clock
+        self._extra_refresh = extra_refresh
+        self._extra = {}
+        self._extra_read_at = None
 
     def read(self):
         with self._connect() as usb:
@@ -525,9 +575,39 @@ class PrinterReader:
                 endpoints=usb.endpoint_map(),
                 topology=self._topology(),
             )
-            roots = self._fetch_roots(hpstatus.LedmClient(usb), report)
+            ledm = hpstatus.LedmClient(usb)
+            roots = self._fetch_roots(ledm, report)
+            if self._extra_due(report.read_at):
+                self._refresh_extra(ledm, report.read_at)
         apply_roots(report, roots)
+        live = {
+            LEDM_PATHS[key]: LedmResource(
+                report.read_at, "HTTP/1.1 200 OK", list(flatten(root))
+            )
+            for key, root in roots.items()
+        }
+        report.resources = live | self._extra
         return report
+
+    def _extra_due(self, now):
+        return (
+            self._extra_read_at is None
+            or now - self._extra_read_at >= self._extra_refresh
+        )
+
+    def _refresh_extra(self, ledm, now):
+        """Every resource the printer lists that a normal reading skips. Their failures stay
+        in their own entry, not in report.errors, so they never change the verdict."""
+        tree = read_resource(ledm, DISCOVERY_PATH, now)
+        if not tree.rows:
+            return  # keep the last copy; retried on the next reading
+        extra = {DISCOVERY_PATH: tree}
+        core = set(LEDM_PATHS.values())
+        for name, uri in tree.rows:
+            listed = name.split("/")[-1].split("[")[0] == "ResourceURI"
+            if listed and uri not in extra and uri not in core:
+                extra[uri] = read_resource(ledm, uri, now)
+        self._extra, self._extra_read_at = extra, now
 
     @staticmethod
     def _fetch_roots(ledm, report):

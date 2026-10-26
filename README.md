@@ -64,6 +64,8 @@ Every reading is appended to `history.jsonl` when something changed. With at lea
 
 The web page is served by the Python standard library, read-only, bound to `127.0.0.1` unless `--host` says otherwise (the Raspberry Pi uses `--host 0.0.0.0 --every 10` for the home LAN). It has no login and shows serial numbers, so do not expose it beyond a trusted network. One thread owns the USB link; every browser tab gets each new reading through Server-Sent Events (`/events`), and `/api/status` returns the latest reading as JSON. The page is plain HTML/JS with no external assets, and follows the system light/dark setting.
 
+At the bottom, "Avançado" lists every raw value the printer gives, one folded block per source, with a filter box: the IEEE 1284 device ID, the raw USB data, and every LEDM resource in `/DevMgmt/DiscoveryTree.xml` flattened to `path → value` (attributes as `path @name`). On the CP1025 that is 29 blocks and about 1,800 fields. The 8 resources of a normal reading change with each reading; the other 18 are read again every 10 minutes (`EXTRA_REFRESH`), because they are mostly lists of accepted values and holding the USB device longer can make CUPS miss the printer. This makes each page update about 170 KB.
+
 | Dark | Phone |
 |---|---|
 | ![Dark](docs/screenshots/web-dark.png) | ![Phone](docs/screenshots/web-phone.png) |
@@ -103,7 +105,7 @@ hpstatus (UsbPrinter, LedmClient)  ->  printer_model (PrinterReader -> Report)  
 | `dashboard.py` | `rich` terminal rendering only |
 | `web_dashboard.py` + `dashboard.html` | local web server (SSE) and the page, which only lays out pre-formatted strings |
 | `printer_summary.py` | CLI entry point |
-| `test_printer_summary.py` | 43 tests; run with `python3 -m pytest -q test_printer_summary.py` (no printer needed: USB, `ioreg` and `lpstat` are faked). If a globally installed pytest plugin breaks the run, add `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` |
+| `test_printer_summary.py` | 46 tests; run with `python3 -m pytest -q test_printer_summary.py` (no printer needed: USB, `ioreg` and `lpstat` are faked). If a globally installed pytest plugin breaks the run, add `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` |
 
 Dump a raw LEDM resource:
 

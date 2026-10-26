@@ -87,6 +87,14 @@ td.num, th.num { text-align: right; }
 details summary { cursor: pointer; font-weight: 700; color: var(--muted); }
 .error-banner { grid-column: span 12; background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 8px 12px; font-weight: 600; }
 .hidden { display: none; }
+.adv-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 10px 0 12px; }
+.adv-tools input { flex: 1 1 260px; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+.adv details { border-top: 1px solid var(--line); padding: 8px 0; }
+.adv details summary { font-weight: 400; color: var(--ink); }
+.adv details summary b { font-family: var(--mono); font-size: 13px; }
+.adv table { margin-top: 8px; table-layout: fixed; }
+.adv td { white-space: normal; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; vertical-align: top; }
+.adv td:first-child { width: 45%; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -127,6 +135,17 @@ details summary { cursor: pointer; font-weight: 700; color: var(--muted); }
   <section class="card span-6">
     <details open><summary>Identificação</summary><dl id="identity" class="kv" style="margin-top:8px"></dl></details>
     <details style="margin-top:12px"><summary>Configuração</summary><dl id="settings" class="kv" style="margin-top:8px"></dl></details>
+  </section>
+
+  <div class="section-title">Avançado</div>
+  <section class="card span-12 adv">
+    <h2>Tudo que a impressora informa</h2>
+    <p class="muted" style="margin:0">Valores brutos, sem tradução, um bloco por fonte. Os 8 recursos LEDM da leitura normal mudam a cada leitura; os outros (listas do que ela aceita, mídia, segurança) são relidos a cada 10 min. Um campo com <code>@access</code> = <code>readWrite</code> pode ser mudado com <code>hpstatus.py --put</code>.</p>
+    <div class="adv-tools">
+      <input id="advFilter" type="search" placeholder="filtrar campo ou valor, ex.: AutoOff" aria-label="Filtrar os campos avançados">
+      <span id="advCount" class="meta"></span>
+    </div>
+    <div id="advanced"></div>
   </section>
 </main>
 <script>
@@ -252,6 +271,47 @@ function renderDetails(d) {
   kv($("settings"), d.settings);
 }
 
+// One <details> per source, kept across readings so an open block stays open; its body is
+// redrawn only when that source changed.
+const advBlocks = new Map();
+
+function renderAdvanced(d) {
+  for (const sec of d.advanced) {
+    let block = advBlocks.get(sec.source);
+    if (!block) {
+      block = document.createElement("details");
+      advBlocks.set(sec.source, block);
+      $("advanced").appendChild(block);
+    }
+    const signature = sec.read_at + sec.status + JSON.stringify(sec.rows);
+    if (block.dataset.signature === signature) continue;
+    block.dataset.signature = signature;
+    const ok = !sec.status || sec.status.includes(" 200");
+    const status = ok ? "" : ` · <span class="state-bad">${esc(sec.status)}</span>`;
+    block.innerHTML = `<summary><b>${esc(sec.title)}</b> · ${sec.rows.length} campos · lido ${esc(sec.read_at)}${status} <span class="muted">· ${esc(sec.source)}</span></summary>`
+      + (sec.rows.length ? `<div class="scroll"><table><tbody>${sec.rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</tbody></table></div>` : "");
+  }
+  filterAdvanced();
+}
+
+function filterAdvanced() {
+  const needle = $("advFilter").value.trim().toLowerCase();
+  let rows = 0, blocks = 0;
+  for (const block of advBlocks.values()) {
+    let hits = 0;
+    for (const tr of block.querySelectorAll("tr")) {
+      const hit = !needle || tr.textContent.toLowerCase().includes(needle);
+      tr.classList.toggle("hidden", !hit);
+      hits += hit;
+    }
+    block.classList.toggle("hidden", Boolean(needle) && !hits);
+    if (needle && hits) block.open = true;
+    rows += hits;
+    blocks += hits > 0;
+  }
+  $("advCount").textContent = `${rows} campos em ${blocks} blocos`;
+}
+
 function renderWaiting(d) {
   // No full reading since the server started (printer off at boot): say why instead of "conectando…".
   const v = $("verdict");
@@ -267,7 +327,7 @@ function render(d) {
     renderWaiting(d);
     return;
   }
-  for (const part of [renderHeader, renderActions, renderTanks, renderStatus, renderSupplies, renderChanges, renderCounters, renderHardware, renderDetails]) {
+  for (const part of [renderHeader, renderActions, renderTanks, renderStatus, renderSupplies, renderChanges, renderCounters, renderHardware, renderDetails, renderAdvanced]) {
     part(d);
   }
 }
@@ -284,6 +344,7 @@ function connect() {
   source.onerror = () => { $("dot").classList.add("off"); $("liveText").textContent = "desconectado, tentando de novo…"; };
 }
 
+$("advFilter").addEventListener("input", filterAdvanced);
 setInterval(tick, 1000);
 connect();
 </script>
