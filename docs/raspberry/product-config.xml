@@ -2,9 +2,13 @@
 <!-- Sent by setup.sh as a PUT to /DevMgmt/ProductConfigDyn.xml. Only the fields listed here
 change. AutoOffTime is the full power-off after idle (factory 4 hours): the printer then drops
 off USB and no job reaches it until someone presses the power button. Sleep after 15 minutes
-(AutoOffDelayTime) stays as it is, a job wakes the printer from it. -->
+(AutoOffDelayTime) stays as it is, a job wakes the printer from it. SmartInstall off: with it on,
+the printer can come up as a virtual CD-ROM (serial ending SI, mass storage only), and a
+GET_DEVICE_ID sent in printer mode, which CUPS and the status page send on every look, puts it
+back there, so no job reaches it. -->
 <prdcfgdyn2:ProductConfigDyn xmlns:prdcfgdyn2="http://www.hp.com/schemas/imaging/con/ledm/productconfigdyn/2009/03/16" xmlns:prdcfgdyn="http://www.hp.com/schemas/imaging/con/ledm/productconfigdyn/2007/11/05" xmlns:dd="http://www.hp.com/schemas/imaging/con/dictionaries/1.0/">
 <prdcfgdyn2:ProductSettings>
 <dd:AutoOffTime>never</dd:AutoOffTime>
+<dd:SmartInstall>disabled</dd:SmartInstall>
 </prdcfgdyn2:ProductSettings>
 </prdcfgdyn2:ProductConfigDyn>
