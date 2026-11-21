@@ -18,7 +18,7 @@ The printer sits on a **Raspberry Pi 3 network print server** (CUPS + the foo2zj
 
 The printer's full power-off after 4 idle hours is turned off (2026-10-26); it still sleeps after 15 minutes and wakes for a job.
 
-The same Pi drives an HDMI monitor, a separate project since 2026-10-25: [pi-painel](https://github.com/iklobato/pi-painel) (private). It reads this repo's `/api/status` for its printer screen.
+The same Pi drove an HDMI monitor, a separate project since 2026-10-25: [pi-painel](https://github.com/iklobato/pi-painel) (private), which reads `/api/status` for its printer screen. The monitor was removed on 2026-11-21 and its service is disabled.
 
 The status verdict is `✔ PRONTA`, `▲ ATENÇÃO` or `✖ COM PROBLEMAS`. The non-HP cartridge alert (`incompatibleConsumable`, `nonHPSupplyDetected`, `usedConsumable`) is a warning, because this printer keeps printing with it; every other printer alert labelled Error is an error. Every alert is also listed in "O que fazer agora".
 

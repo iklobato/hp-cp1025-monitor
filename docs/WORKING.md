@@ -15,13 +15,13 @@ For any agent or person picking this up. What the project is: [README.md](../REA
 | Printer | USB of a Raspberry Pi 3, `impressora-pi.local`, `ssh impressora` from the owner's Mac (user `iklo`, `sudo` without password) |
 | Print queue | CUPS queue `HP_CP1025` on the Pi, shared as AirPrint "HP CP1025 @ impressora-pi" |
 | Status page | systemd `cp1025-dashboard`, port 8025, runs `~/hp-cp1025-monitor` on the Pi as a detached checkout of `main` |
-| HDMI monitor | systemd `painel`, a separate repo ([pi-painel](https://github.com/iklobato/pi-painel)); it reads `/api/status` from port 8025 |
+| HDMI monitor | none since 2026-11-21: the owner removed it and systemd `painel` (a separate repo, [pi-painel](https://github.com/iklobato/pi-painel)) is disabled. When it runs, it reads `/api/status` from port 8025 |
 
 ## Rules that come from real breakage
 
 - **One USB reader at a time.** A status reading holds the USB device; CUPS may then not find the printer. The service reads every 10 s. Before a long manual session on the Pi, `sudo systemctl stop cp1025-dashboard`, and start it again after.
 - **Manual reads on the Pi need `sudo`** (or the `lp` group). Without it `hpstatus.py` says `printer not found on USB`, which looks like the printer is off when it is not. Check `lsusb | grep 03f0:112a` before concluding the printer is off.
-- **Never leave the Pi without its services.** End every Pi session with `systemctl is-active cups cp1025-dashboard painel` and one look at `curl -s localhost:8025/api/status`.
+- **Never leave the Pi without its services.** End every Pi session with `systemctl is-active cups cp1025-dashboard` (`painel` is disabled since 2026-11-21, so it reads `inactive`) and one look at `curl -s localhost:8025/api/status`.
 - **Do not edit files inside `~/hp-cp1025-monitor` on the Pi.** `setup.sh` checks out `main` there; local edits make that fail. Test new code from a temp folder (`mktemp -d`, copy the `.py` files and `dashboard.html`, run on another port such as 8099), then delete the folder.
 - **`pkill -f` with a pattern that is also in your own `ssh` command kills that command.** Match on something only the target process has, or use the PID.
 - **Settings:** read `/DevMgmt/<Name>Cap.xml` first, `PUT` only fields marked `readWrite` with a value from its list, then read `<Name>Dyn.xml` back. A setting that must survive a rebuild or a printer reset goes into `docs/raspberry/product-config.xml` (applied by `setup.sh`), and into the settings table in FINDINGS.
