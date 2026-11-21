@@ -28,7 +28,7 @@ Evidence: Pi log of job 22, `File of type application/pdf queued by "iklo"`, the
 | Pi filters present | `cp1025-foo2zjs`, `foo2zjs`, `gstoraster`, `pdftopdf`, `rastertopksm` in `/usr/lib/cups/filter` | `ls` |
 | Canvas | 4960 x 7016 for A4 (`cp1025-foo2zjs page=4960x7016 paper=9 copies=1` in jobs 20 and 21). The script also has a Letter branch (5100 x 6600) that the Pi never reaches, because the Pi PPD has no Letter | the Pi's CUPS log; [../driver/macos/cp1025-foo2zjs](../driver/macos/cp1025-foo2zjs) |
 | Ghostscript for a color PDF job | `gs ... -sDEVICE=cups -r600x600 -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dcupsBitsPerColor=8 -dcupsColorOrder=0 -dcupsColorSpace=6 -scupsPageSizeName=A4 ... .HWMargins[11.52 ...]` | Pi log, job 22 |
-| Pi services | `cups` active, `cp1025-dashboard` active, `painel` activating (crash loop, see [pi-observations.md](pi-observations.md)) | `systemctl is-active` |
+| Pi services | `cups` active, `cp1025-dashboard` active, `painel` activating (crash loop, see [pi-observations.md](pi-observations.md); disabled 2026-11-21 17:05) | `systemctl is-active` |
 | Printer on USB | present (`03f0:112a`) | `lsusb` on the Pi |
 | Printer settings | `Desliga sozinha após: nunca`, `Dorme após: 15 min`, `Auto-continuar: desligado` | status page, key `settings` |
 | Printer state | `economia de energia` (asleep, a job wakes it) with the usual non-HP cartridge alert `incompatibleConsumable` | status page, keys `status_rows`, `alerts` |

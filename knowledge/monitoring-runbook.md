@@ -35,12 +35,12 @@ ssh impressora 'sudo grep -hE "\[Job N\]" /var/log/cups/error_log | grep -E "ras
 | USB drops | `ssh impressora 'sudo dmesg -T \| grep -E "usb 1-1\.[2-5]\|port[2-5]" \| grep -v usbfs'` (the cable is on port 5 since 2026-11-21) | no new lines | 2026-11-21: port 4 failures 12:58 to 13:10, printer on 1-1.5 since 13:21:57, see [smart-install-outage.md](smart-install-outage.md) |
 | Smart Install off | read `ProductConfigDyn.xml` over LEDM with the status page stopped, look for `<dd:SmartInstall>` | `disabled` | `disabled`, 2026-11-21 13:34 |
 | Power of the Pi | `ssh impressora 'vcgencmd get_throttled'` | `0x0`. Bits 0 and 2 (`0x1`, `0x4`) set = happening now; bits 16 and 18 (`0x10000`, `0x40000`) = has happened since boot | `0x50000` (happened, not now), 41.9 C |
-| Services | `ssh impressora 'systemctl is-active cups cp1025-dashboard painel'` | `active` x3 | `active active activating` (`painel` is crash looping, not this project's code) |
+| Services | `ssh impressora 'systemctl is-active cups cp1025-dashboard'` | `active` x2 (`painel` is disabled since 2026-11-21, see [open-items.md](open-items.md)) | `active active`, 2026-11-21 17:06 |
 | Mac queue driver | `grep NickName /etc/cups/ppd/HP_CP1025___impressora_pi.ppd` | `... IPP Everywhere` | IPP Everywhere, 12:01 |
 | Mac queue color default | `lpoptions -p HP_CP1025___impressora_pi -l \| grep ColorModel` | `*Gray RGB` | `*Gray RGB` |
 | Toner after color jobs | status page keys `consumables`, `next_out` | cyan and magenta falling by the pages printed | cyan 50%, magenta about 250 pages (about 300 before the 14 color pages), 12:02 |
 | CUPS log size | `ssh impressora 'ls -la /var/log/cups/error_log'` | small (debug off) | 6.5 MB at 11:11, `LogLevel debug` still on |
-| Pi services after a session | `systemctl is-active cups cp1025-dashboard painel` and `curl -s localhost:8025/api/status \| head -c 300` | as `WORKING.md` says | done at 11:24 and 12:01 |
+| Pi services after a session | `systemctl is-active cups cp1025-dashboard` and `curl -s localhost:8025/api/status \| head -c 300` | as `WORKING.md` says | done at 11:24 and 12:01 |
 
 ## Rules for whoever runs these
 - Do not stop `cp1025-dashboard` for a quick look: one status read at a time is the rule, and it already reads every 10 s. Stop it only for a long manual session on the Pi, and start it again.
